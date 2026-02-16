@@ -52,6 +52,7 @@ async function main() {
     config.security.allowedCommands,
     config.security.restrictedCommands,
     config.security.forbiddenPaths,
+    config.security.allowedPaths,
     rateLimiter,
   );
   const policyEngine = new PolicyEngine(config.policy, configDir);
