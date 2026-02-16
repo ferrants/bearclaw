@@ -156,7 +156,7 @@ If memory is enabled, files listed in `memory.alwaysLoad` (default: `["active-ta
 
 ### 4. Skills
 
-If any skills are loaded from `{workspace}/skills/`, their names and descriptions are listed under `## Available Skills`. See [Skills](skills.md) for details.
+Skills are loaded from multiple directories with precedence (workspace > user-level `~/.bearclaw/skills/`). Their names and descriptions are listed under `## Available Skills` in the system prompt. Skills with `disable-model-invocation` in their metadata are excluded from the system prompt. See [Skills](skills.md) for details.
 
 ### 5. Team Context
 
@@ -173,12 +173,20 @@ To prevent large files from blowing up the context window, the system prompt app
 
 ### CLI Mode
 
-The CLI entry point (`src/index.ts`) runs a single default agent in a REPL loop:
+The CLI entry point (`src/index.ts`) supports two modes:
+
+**Interactive REPL:**
 1. Load config, initialize subsystems
 2. Create provider for default agent
-3. Load session, build system prompt
-4. REPL: read user input → parse inline allows → run agent loop with streaming → display results
+3. Load session, refresh system prompt (always updated on load)
+4. REPL: read user input → handle commands (`/help`, `/new`, `/exit`) → handle skill slash commands → parse inline allows → run agent loop with streaming → display results
 5. Save session on exit
+
+**Headless mode** (`bearclaw -p "prompt"`):
+1. Same initialization as REPL
+2. Run single prompt through agent loop (no streaming, no interactive approval)
+3. Print response to stdout and exit
+4. Optionally persist session with `-s session-id`
 
 ### Daemon Mode
 

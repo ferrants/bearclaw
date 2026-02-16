@@ -315,6 +315,8 @@ interface SkillDef {
   description: string;       // When to use this skill
   dir: string;               // Absolute path to skill directory
   instructions: string;      // Markdown body of SKILL.md
+  disableModelInvocation?: boolean;  // Exclude from system prompt
+  source?: string;           // Which skills/ directory this was loaded from
 }
 ```
 

@@ -9,7 +9,7 @@ Welcome to the BearClaw documentation. BearClaw is an AI agent framework with de
 3. **[Security](security.md)** — Defense-in-depth security model, policies, encryption, rate limiting
 4. **[Providers](providers.md)** — LLM provider abstraction: Anthropic, OpenAI, Ollama, CLI Delegation
 5. **[Tools](tools.md)** — Tool system, built-in tools, hooks, validation
-6. **[Skills](skills.md)** — User-defined skills with script tools and MCP servers
+6. **[Skills](skills.md)** — Agent Skills spec-compatible skill system with slash commands
 7. **[Agent Loop](agent-loop.md)** — Core agentic loop, sessions, context assembly
 8. **[Multi-Agent](multi-agent.md)** — Teams, routing, mentions, conversation tracking
 9. **[Channels](channels.md)** — CLI and Telegram channel integration

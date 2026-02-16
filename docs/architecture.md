@@ -43,7 +43,7 @@ The only runtime dependencies are:
 ```
 bearclaw/
   src/
-    index.ts                          # CLI entry point (REPL)
+    index.ts                          # CLI entry point (REPL + headless)
     daemon.ts                         # Daemon (channels + bus + orchestrator)
     logging.ts                        # Structured JSON logging
     events.ts                         # Typed EventBus
@@ -124,7 +124,7 @@ bearclaw/
     cli/
       policy-status.ts                # Policy status display
 
-  tests/                              # 186 tests across 22 files
+  tests/                              # 193 tests across 22 files
     security/                         # policy, secrets, rate-limiter, ssrf
     tools/                            # registry, hooks, exec, validate
     providers/                        # anthropic, openai

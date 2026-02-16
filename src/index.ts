@@ -15,6 +15,7 @@ import { OpenAIProvider } from './providers/openai.js';
 import { OllamaProvider } from './providers/ollama.js';
 import { CliDelegationProvider } from './providers/cli-delegation.js';
 import type { LLMProvider } from './providers/types.js';
+import type { Message } from './providers/types.js';
 import { ToolRegistryImpl } from './tools/registry.js';
 import { ToolHookRegistryImpl } from './tools/hooks.js';
 import { readFileTool } from './tools/builtin/read-file.js';
@@ -30,8 +31,28 @@ import { buildSystemPrompt } from './agent/context.js';
 import { loadSession, saveSession, clearSession } from './agent/session.js';
 import { loadSkills } from './skills/index.js';
 import { McpClient, createMcpTools } from './mcp/index.js';
+import type { SkillDef } from './skills/types.js';
+import type { ToolContext } from './tools/types.js';
 
 const log = createLogger('cli');
+
+function parseArgs(argv: string[]): { prompt?: string; sessionId?: string } {
+  const args = argv.slice(2);
+  let prompt: string | undefined;
+  let sessionId: string | undefined;
+
+  for (let i = 0; i < args.length; i++) {
+    if ((args[i] === '-p' || args[i] === '--prompt') && i + 1 < args.length) {
+      prompt = args[i + 1];
+      i++;
+    } else if ((args[i] === '-s' || args[i] === '--session') && i + 1 < args.length) {
+      sessionId = args[i + 1];
+      i++;
+    }
+  }
+
+  return { prompt, sessionId };
+}
 
 function cliApproval(toolName: string, args: Record<string, unknown>): Promise<boolean> {
   return new Promise((resolve) => {
@@ -46,9 +67,12 @@ function cliApproval(toolName: string, args: Record<string, unknown>): Promise<b
 }
 
 async function main() {
+  const cliArgs = parseArgs(process.argv);
+  const headless = cliArgs.prompt !== undefined;
+
   const config = loadConfig();
   const configDir = getConfigDir();
-  setLogLevel(config.monitoring.logLevel);
+  setLogLevel(headless ? 'error' : config.monitoring.logLevel);
 
   log.info('BearClaw CLI starting');
 
@@ -167,6 +191,11 @@ async function main() {
         return { proceed: true, args };
       }
 
+      if (headless) {
+        // No interactive approval in headless mode — deny
+        return { proceed: false, args };
+      }
+
       // Prompt user for approval in CLI mode
       const approved = await cliApproval(toolName, args);
       if (!approved) {
@@ -189,7 +218,7 @@ async function main() {
   const model = agentConfig.model ?? provider.defaultModel;
 
   // Build context
-  const ctx = {
+  const ctx: ToolContext = {
     signal: AbortSignal.timeout(600_000),
     policy,
     policyEngine,
@@ -205,9 +234,87 @@ async function main() {
   // Build system prompt
   const systemPrompt = buildSystemPrompt(agentConfig, config, toolRegistry, undefined, skills);
 
-  // Load session
   const sessionsDir = path.join(configDir, 'sessions');
-  const messages = loadSession(sessionsDir, agentId, 'cli', 'repl');
+
+  if (headless) {
+    await runHeadless(cliArgs.prompt!, cliArgs.sessionId, systemPrompt, sessionsDir, agentId, provider, model, toolRegistry, hooks, agentConfig, ctx, skills, mcpClients);
+  } else {
+    await runRepl(systemPrompt, sessionsDir, agentId, provider, model, toolRegistry, hooks, agentConfig, ctx, skills, mcpClients, inlineAllowStore, path.resolve(config.workspace.path));
+  }
+}
+
+async function runHeadless(
+  prompt: string,
+  sessionId: string | undefined,
+  systemPrompt: string,
+  sessionsDir: string,
+  agentId: string,
+  provider: LLMProvider,
+  model: string,
+  toolRegistry: ToolRegistryImpl,
+  hooks: ToolHookRegistryImpl,
+  agentConfig: { maxIterations?: number; maxTotalTokens?: number },
+  ctx: ToolContext,
+  skills: SkillDef[],
+  mcpClients: McpClient[],
+): Promise<void> {
+  const chatId = sessionId ?? `headless-${Date.now()}`;
+  const messages: Message[] = sessionId
+    ? loadSession(sessionsDir, agentId, 'cli', chatId)
+    : [];
+
+  // Set system prompt
+  if (messages.length > 0 && messages[0].role === 'system') {
+    messages[0].content = systemPrompt;
+  } else {
+    messages.unshift({ role: 'system', content: systemPrompt });
+  }
+
+  messages.push({ role: 'user', content: prompt });
+
+  try {
+    const result = await runAgentLoop(
+      { provider, model, tools: toolRegistry, hooks, maxIterations: agentConfig.maxIterations ?? 25, maxTotalTokens: agentConfig.maxTotalTokens },
+      messages,
+      ctx,
+    );
+
+    // Print just the response
+    process.stdout.write(result.content + '\n');
+
+    // Save session if using a named session
+    if (sessionId) {
+      messages.push({ role: 'assistant', content: result.content });
+      saveSession(sessionsDir, agentId, 'cli', chatId, messages);
+    }
+  } catch (err) {
+    console.error((err as Error).message);
+    process.exit(1);
+  }
+
+  // Cleanup
+  for (const client of mcpClients) {
+    await client.stop();
+  }
+}
+
+async function runRepl(
+  systemPrompt: string,
+  sessionsDir: string,
+  agentId: string,
+  provider: LLMProvider,
+  model: string,
+  toolRegistry: ToolRegistryImpl,
+  hooks: ToolHookRegistryImpl,
+  agentConfig: { name: string; maxIterations?: number; maxTotalTokens?: number; provider: string },
+  ctx: ToolContext,
+  skills: SkillDef[],
+  mcpClients: McpClient[],
+  inlineAllowStore: InlineAllowStore,
+  workspacePath: string,
+): Promise<void> {
+  // Load session
+  const messages: Message[] = loadSession(sessionsDir, agentId, 'cli', 'repl');
 
   // Always refresh system prompt (replace if exists, insert if not)
   if (systemPrompt) {
@@ -223,7 +330,7 @@ async function main() {
 
   console.log('\nBearClaw CLI');
   console.log(`Agent: ${agentConfig.name} (${agentConfig.provider}/${model})`);
-  console.log(`Workspace: ${path.resolve(config.workspace.path)}`);
+  console.log(`Workspace: ${workspacePath}`);
   console.log('Type /help for commands.\n');
 
   const prompt = () => {
@@ -287,7 +394,7 @@ async function main() {
 
             try {
               const result = await runAgentLoop(
-                { provider, model, tools: toolRegistry, hooks, maxIterations: agentConfig.maxIterations ?? 25, maxTotalTokens: agentConfig.maxTotalTokens, options: { onToken: (t) => process.stdout.write(t) } },
+                { provider, model, tools: toolRegistry, hooks, maxIterations: agentConfig.maxIterations ?? 25, maxTotalTokens: agentConfig.maxTotalTokens, options: { onToken: (t: string) => process.stdout.write(t) } },
                 messages,
                 ctx,
               );
@@ -315,9 +422,9 @@ async function main() {
 
       try {
         const result = await runAgentLoop(
-          { provider, model, tools: toolRegistry, hooks, maxIterations: agentConfig.maxIterations ?? 25, maxTotalTokens: agentConfig.maxTotalTokens, options: { onToken: (t) => process.stdout.write(t) } },
+          { provider, model, tools: toolRegistry, hooks, maxIterations: agentConfig.maxIterations ?? 25, maxTotalTokens: agentConfig.maxTotalTokens, options: { onToken: (t: string) => process.stdout.write(t) } },
           messages,
-          ctx,
+          ctx as ToolContext,
         );
 
         process.stdout.write('\n\n');

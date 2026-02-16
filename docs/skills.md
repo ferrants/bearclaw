@@ -1,6 +1,6 @@
 # Skills
 
-BearClaw supports a filesystem-based skill system — compatible with Claude Code's Agent Skills format — that lets users add capabilities without modifying source code. Drop a `SKILL.md` into your workspace and BearClaw picks it up automatically.
+BearClaw supports a filesystem-based skill system that follows the [Agent Skills spec](https://agentskills.io/specification.md). A `SKILL.md` that works in Claude Code or any other spec-compliant tool works in BearClaw with no modifications.
 
 Skills are purely instruction-based: they provide context and guidance that gets loaded into the agent's system prompt. The agent uses its existing tools (like `exec`) to act on the instructions.
 
@@ -15,7 +15,8 @@ workspace/
     │   └── SKILL.md
     └── code-review/
         ├── SKILL.md
-        └── checklist.md
+        └── references/
+            └── checklist.md
 ```
 
 Each skill is a directory containing a `SKILL.md` file with YAML frontmatter and markdown instructions.
@@ -30,7 +31,7 @@ description: "Remote control tmux sessions for interactive CLIs (python, gdb, et
 
 # tmux Skill
 
-Use tmux as a programmable terminal multiplexer for interactive work.
+Run tmux commands in the shell to control sessions, send keystrokes, and read output.
 
 ## Sending input safely
 
@@ -44,16 +45,50 @@ Use tmux as a programmable terminal multiplexer for interactive work.
 
 ### Frontmatter Fields
 
+Only standard fields from the [Agent Skills spec](https://agentskills.io/specification.md) are supported. No BearClaw-specific extensions.
+
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `name` | string | yes | Skill identifier, kebab-case |
-| `description` | string | yes | When to use this skill, shown to LLM |
+| `name` | string | yes | Skill identifier. Lowercase, hyphens, max 64 chars. Must match directory name. |
+| `description` | string | yes | What the skill does and when to use it. Max 1024 chars. |
+| `license` | string | no | License name or reference to bundled license file |
+| `compatibility` | string | no | Environment requirements (intended product, system packages, etc.) |
+| `metadata` | object | no | Arbitrary key-value mapping for additional metadata |
+| `allowed-tools` | string | no | Space-delimited list of pre-approved tools (experimental) |
 
-The rest of the file is markdown instructions that the agent reads when the skill is relevant.
+The rest of the file is markdown instructions that the agent reads when the skill is activated.
 
-## Compatibility
+## Multi-Source Loading
 
-BearClaw skills use the same format as Claude Code Agent Skills. A `SKILL.md` that works in Claude Code works in BearClaw with no modifications — just copy the skill directory into `{workspace}/skills/`.
+Skills are loaded from multiple directories with precedence. Earlier directories take priority — if the same skill name appears in both, the first one wins:
+
+1. **Workspace skills** (`{workspace}/skills/`) — highest precedence
+2. **User-level skills** (`~/.bearclaw/skills/`) — lower precedence
+
+This lets you override shared skills with workspace-specific versions.
+
+## Slash Commands
+
+All loaded skills are available as `/skill-name` slash commands in the CLI REPL:
+
+```
+> /help
+Commands:
+  /new     — Clear conversation and start fresh
+  /exit    — Save session and exit
+  /help    — Show this help
+
+Skills:
+  /tmux  — Remote control tmux sessions for interactive CLIs
+
+> /tmux
+Skill "tmux" activated.
+
+> check the output of map:0
+```
+
+- **`/skill-name`** — Activates the skill: injects its instructions into the conversation context and confirms activation. The user's next message runs with the skill context.
+- **`/skill-name some task`** — Activates the skill AND immediately runs the task.
 
 ## Context Integration
 
@@ -75,14 +110,15 @@ This costs ~100 tokens per skill and helps the LLM know what's available.
 
 ### Level 2: Full Instructions (on demand)
 
-When the LLM decides a skill is relevant, it reads the full `SKILL.md` via `read_file` to get detailed instructions from the markdown body.
+When the LLM decides a skill is relevant, it reads the full `SKILL.md` via `read_file` to get detailed instructions. When activated via slash command, the full instructions are injected directly into the conversation.
 
 ## Loading Pipeline
 
-1. **Discovery**: Scans `{workspace}/skills/*/SKILL.md` using `fs.readdirSync`
-2. **Parsing**: Splits on `---` to extract YAML frontmatter, captures markdown body
-3. **Validation**: Checks name and description are present
-4. **Registration**: Skill metadata passed to `buildSystemPrompt()`
+1. **Discovery**: Scans `{workspace}/skills/*/SKILL.md` then `{configDir}/skills/*/SKILL.md`
+2. **Deduplication**: First occurrence of each skill name wins (workspace takes precedence)
+3. **Parsing**: Splits on `---` to extract YAML frontmatter, captures markdown body
+4. **Validation**: Checks name and description are present
+5. **Registration**: Skill metadata passed to `buildSystemPrompt()`
 
 Invalid skills are logged as warnings and skipped — they don't prevent other skills from loading.
 

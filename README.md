@@ -26,9 +26,10 @@
 - **Multi-provider LLM abstraction** — Anthropic, OpenAI, Ollama, and CLI Delegation (claude, codex, etc.) with streaming support and exponential backoff retry
 - **Multi-agent orchestration** — Team-based routing, `[@agent: message]` mention parsing, conversation tracking with fan-out/fan-in pattern
 - **Multi-channel messaging** — CLI REPL and Telegram with a unified message bus
-- **Skills system** — Drop a `SKILL.md` into `skills/` and BearClaw picks it up automatically. Compatible with Claude Code Agent Skills format — the same skill files work in both tools.
+- **Skills system** — Drop a `SKILL.md` into `skills/` and BearClaw picks it up automatically. Follows the [Agent Skills spec](https://agentskills.io/specification.md) — the same skill files work in Claude Code and other compatible tools. Multi-source loading with workspace precedence over user-level skills. All skills available as `/skill-name` slash commands in the CLI.
 - **MCP support** — Configure MCP servers in `config.json` and their tools are discovered and registered automatically via JSON-RPC 2.0 over stdio.
-- **Tool system** — 9 built-in tools plus user-defined skill tools, with JSON Schema validation, before/after hooks, parallel execution, and structured results (forLLM/forUser/silent/async)
+- **Headless mode** — Run one-shot prompts with `bearclaw -p "your prompt"` for scripting and automation.
+- **Tool system** — 9 built-in tools with JSON Schema validation, before/after hooks, parallel execution, and structured results (forLLM/forUser/silent/async)
 - **HTTP gateway** — Pairing-based authentication with CSPRNG codes, SHA-256 token verification, and brute-force lockout
 - **Session persistence** — Conversations saved as JSON, memory as markdown files
 - **Zero SDK dependencies** — All provider integrations use `fetch()` directly. Only 2 runtime dependencies total.
@@ -84,9 +85,17 @@ On first run, BearClaw will encrypt your API key in-place and generate a secret 
 bearclaw
 ```
 
-This launches an interactive REPL with the default agent. Type your message and press enter. Type `quit` to exit.
+This launches an interactive REPL with the default agent. Type your message and press enter. Type `/help` to see commands and available skills. Type `/exit` to save your session and exit.
 
-### 3. Start the daemon (multi-channel)
+### 3. Headless mode
+
+```bash
+bearclaw -p "explain what BearClaw is"
+```
+
+Runs a single prompt, prints the response, and exits. Useful for scripting and automation. Add `-s my-session` to persist conversation state across invocations.
+
+### 4. Start the daemon (multi-channel)
 
 ```bash
 bearclaw-daemon
@@ -224,9 +233,9 @@ src/
 2. **Security initializes** — policy engine, rate limiters, approval manager
 3. **Provider creates** — LLM connections via `fetch()` with retry and streaming
 4. **Tools register** — built-in tools with JSON Schema validation and hook pipeline
-5. **Skills load** — scans `skills/` for SKILL.md files, registers script tools and MCP server tools
+5. **Skills load** — scans workspace and user-level `skills/` directories for SKILL.md files with precedence
 6. **Agent loop runs** — sends messages to LLM, executes tool calls in parallel, appends results, repeats until done
-6. **Bus routes messages** — inbound from channels, outbound to channels, with agent routing and team orchestration
+7. **Bus routes messages** — inbound from channels, outbound to channels, with agent routing and team orchestration
 
 ## Development
 
@@ -234,7 +243,7 @@ src/
 npm run build        # Compile TypeScript
 npm run dev          # Run CLI with tsx (no build needed)
 npm run daemon       # Run daemon with tsx
-npm test             # Run tests (186 tests)
+npm test             # Run tests (193 tests)
 npm run typecheck    # Type check without emitting
 ```
 
