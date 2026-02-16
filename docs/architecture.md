@@ -18,11 +18,13 @@ Memory lives in the workspace as plain markdown files:
 
 Agents read and write these with `read_file`/`write_file` tools. No database, no vector search, no embedding cache. The agent's intelligence is the search engine.
 
-### MCP via Spawn + CLI Delegation
+### Skills = SKILL.md Files
 
-Instead of implementing an MCP client, BearClaw delegates to tools that already have MCP support. An agent spawns a subagent configured with the CLI Delegation provider, which calls `claude -p "..."` or any other CLI tool with MCP capabilities.
+Skills live in `{workspace}/skills/{name}/SKILL.md` with YAML frontmatter and markdown instructions. BearClaw scans the directory at startup, parses frontmatter with a zero-dependency YAML parser, and injects skill metadata into the system prompt. Skills are purely instruction-based — compatible with Claude Code's Agent Skills format. The same `SKILL.md` works in both tools.
 
-This is provider-agnostic. Adding a new tool means adding a config entry, not code.
+### MCP Client
+
+BearClaw includes a built-in MCP client that communicates over stdio using JSON-RPC 2.0. MCP servers are configured in `config.json` and spawned at startup, with tools discovered via `tools/list` and registered automatically. Additionally, CLI Delegation remains available for tools that need full MCP support via external processes.
 
 ### Sessions = JSON Files
 
@@ -85,9 +87,20 @@ bearclaw/
         spawn.ts                      # Provider-agnostic subagent
         message.ts                    # Cross-channel send
 
+    skills/
+      types.ts                        # SkillDef
+      frontmatter.ts                  # Zero-dependency YAML frontmatter parser
+      loader.ts                       # Scan skills/, parse SKILL.md, validate
+      index.ts                        # Barrel exports
+
+    mcp/
+      client.ts                       # JSON-RPC 2.0 over stdio
+      tool.ts                         # MCP tools → Tool[]
+      index.ts                        # Barrel exports
+
     agent/
       loop.ts                         # LLM call → parallel tools → loop
-      context.ts                      # System prompt assembly
+      context.ts                      # System prompt assembly with truncation
       session.ts                      # JSON file persistence
 
     bus/
@@ -111,12 +124,14 @@ bearclaw/
     cli/
       policy-status.ts                # Policy status display
 
-  tests/                              # 117 tests across 15 files
+  tests/                              # 186 tests across 22 files
     security/                         # policy, secrets, rate-limiter, ssrf
     tools/                            # registry, hooks, exec, validate
     providers/                        # anthropic, openai
     orchestrator/                     # conversation, mentions, router
-    agent/                            # loop
+    agent/                            # loop, context
+    skills/                           # frontmatter, loader
+    mcp/                              # client
     bus/                              # bus
 ```
 
@@ -205,8 +220,8 @@ BearClaw cherry-picks patterns from five projects:
 
 ## Post-MVP Roadmap
 
-1. Custom MCP client — direct tool discovery without CLI delegation overhead
-2. Skills system — YAML frontmatter + prompt templates with routing
+1. ~~Custom MCP client~~ — ✅ Built-in MCP client with JSON-RPC 2.0 over stdio
+2. ~~Skills system~~ — ✅ SKILL.md files with script tools and MCP servers
 3. Plugin system — tools + hooks + channels from npm packages
 4. Cron scheduler + heartbeat — recurring tasks in fresh sessions
 5. Crash recovery journal — structured task journaling beyond active-tasks.md

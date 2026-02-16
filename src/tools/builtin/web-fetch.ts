@@ -1,3 +1,5 @@
+import * as http from 'node:http';
+import * as https from 'node:https';
 import type { Tool, ToolContext } from '../types.js';
 import { toolResult, errorResult } from '../types.js';
 import { validateUrl } from '../../security/ssrf.js';
@@ -22,7 +24,7 @@ export const webFetchTool: Tool = {
       return errorResult('Rate limited: too many web requests');
     }
 
-    // SSRF validation
+    // SSRF validation (resolves DNS once, returns the IP to connect to)
     const validation = await validateUrl(url);
     if (!validation.allowed) {
       return errorResult(`URL blocked: ${validation.reason}`);
@@ -31,35 +33,100 @@ export const webFetchTool: Tool = {
     ctx.policy.recordAction('web', ctx.currentAgentConfig.name);
 
     try {
-      const response = await fetch(url, {
-        signal: AbortSignal.timeout(WEB_FETCH_TIMEOUT_MS),
-        headers: {
-          'User-Agent': 'BearClaw/0.1',
-          'Accept': 'text/html,application/json,text/plain',
-        },
-      });
+      // Build a URL that connects to the resolved IP, preventing DNS rebinding
+      const parsed = new URL(url);
+      const resolvedIP = validation.resolvedIP!;
+      const originalHostname = validation.hostname!;
+      const isHttps = parsed.protocol === 'https:';
 
-      if (!response.ok) {
-        return errorResult(`HTTP ${response.status}: ${response.statusText}`);
+      const text = await fetchByIP(parsed, resolvedIP, originalHostname, isHttps);
+      let result = text;
+
+      const contentType = result.startsWith('<!') || result.startsWith('<html') ? 'text/html' : '';
+      if (contentType) {
+        result = stripHtml(result);
       }
 
-      const contentType = response.headers.get('content-type') ?? '';
-      let text = await response.text();
-
-      if (contentType.includes('text/html')) {
-        text = stripHtml(text);
+      if (result.length > WEB_FETCH_MAX_CHARS) {
+        result = result.slice(0, WEB_FETCH_MAX_CHARS) + '\n[Truncated]';
       }
 
-      if (text.length > WEB_FETCH_MAX_CHARS) {
-        text = text.slice(0, WEB_FETCH_MAX_CHARS) + '\n[Truncated]';
-      }
-
-      return toolResult(text);
+      return toolResult(result);
     } catch (err) {
       return errorResult(`Fetch failed: ${(err as Error).message}`);
     }
   },
 };
+
+/**
+ * Fetch a URL by connecting to a specific IP address.
+ * This prevents DNS rebinding by ensuring we connect to the IP we validated.
+ * The Host header and TLS SNI are set to the original hostname.
+ */
+function fetchByIP(
+  parsed: URL,
+  resolvedIP: string,
+  originalHostname: string,
+  isHttps: boolean,
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const port = parsed.port
+      ? parseInt(parsed.port)
+      : isHttps ? 443 : 80;
+
+    const options: http.RequestOptions = {
+      hostname: resolvedIP,
+      port,
+      path: parsed.pathname + parsed.search,
+      method: 'GET',
+      headers: {
+        'Host': originalHostname + (parsed.port ? `:${parsed.port}` : ''),
+        'User-Agent': 'BearClaw/0.1',
+        'Accept': 'text/html,application/json,text/plain',
+      },
+      timeout: WEB_FETCH_TIMEOUT_MS,
+    };
+
+    if (isHttps) {
+      // Set servername for TLS SNI so certificate validation works
+      (options as https.RequestOptions).servername = originalHostname;
+    }
+
+    const transport = isHttps ? https : http;
+    const req = transport.request(options, (res) => {
+      if (res.statusCode && (res.statusCode < 200 || res.statusCode >= 300)) {
+        reject(new Error(`HTTP ${res.statusCode}: ${res.statusMessage}`));
+        res.resume();
+        return;
+      }
+
+      const chunks: Buffer[] = [];
+      let size = 0;
+
+      res.on('data', (chunk: Buffer) => {
+        size += chunk.length;
+        // Stop accumulating if way over limit
+        if (size <= WEB_FETCH_MAX_CHARS * 2) {
+          chunks.push(chunk);
+        }
+      });
+
+      res.on('end', () => {
+        resolve(Buffer.concat(chunks).toString('utf8'));
+      });
+
+      res.on('error', reject);
+    });
+
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new Error(`Request timed out after ${WEB_FETCH_TIMEOUT_MS}ms`));
+    });
+
+    req.on('error', reject);
+    req.end();
+  });
+}
 
 function stripHtml(html: string): string {
   return html

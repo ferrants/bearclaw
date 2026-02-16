@@ -35,6 +35,9 @@ BearClaw uses a single `config.json` file located at `~/.bearclaw/config.json` (
   "channels": {
     "enabled": ["cli"]
   },
+  "mcp": {
+    "servers": {}
+  },
   "agents": {
     "default": {
       "name": "default",
@@ -289,6 +292,61 @@ Typical memory structure:
   projects.md           # Project-specific context
   YYYY-MM-DD.md         # Daily logs
 ```
+
+## Skills
+
+Skills are configured via filesystem convention, not `config.json`. Place skill directories in `{workspace}/skills/`:
+
+```
+~/.bearclaw/workspace/skills/
+  tmux/
+    SKILL.md
+  code-review/
+    SKILL.md
+    checklist.md
+```
+
+Each `SKILL.md` has YAML frontmatter with `name` and `description`, plus a markdown body with instructions. Skills are loaded automatically at startup and their metadata is injected into the system prompt.
+
+See [Skills](skills.md) for the full format. BearClaw skills are compatible with Claude Code Agent Skills — the same `SKILL.md` works in both.
+
+## MCP Servers
+
+MCP (Model Context Protocol) servers are configured in `config.json`. Each server is spawned over stdio at startup and its tools are discovered and registered automatically.
+
+```json
+{
+  "mcp": {
+    "servers": {
+      "jira": {
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-jira"],
+        "env": {
+          "JIRA_URL": "https://mycompany.atlassian.net",
+          "JIRA_TOKEN": "${JIRA_TOKEN}"
+        }
+      },
+      "github": {
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-github"],
+        "env": {
+          "GITHUB_TOKEN": "${GITHUB_TOKEN}"
+        }
+      }
+    }
+  }
+}
+```
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `command` | string | yes | Command to spawn the MCP server |
+| `args` | string[] | no | Arguments for the command |
+| `env` | object | no | Environment variables (supports `${VAR}` expansion from process env) |
+
+Tools discovered from each server are registered with a `{serverName}_{toolName}` prefix (e.g., `jira_create_issue`, `github_list_repos`). They go through the same security pipeline as built-in tools.
+
+Servers are started at startup and stopped during graceful shutdown.
 
 ## Monitoring
 

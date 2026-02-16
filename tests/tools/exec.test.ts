@@ -14,6 +14,7 @@ function makeCtx(overrides?: Partial<{ autonomy: AutonomyLevel }>): ToolContext 
     ALLOWED_COMMANDS,
     RESTRICTED_COMMANDS,
     FORBIDDEN_PATHS,
+    [],
     new ScopedRateLimiter({ global: 100 }),
   );
 

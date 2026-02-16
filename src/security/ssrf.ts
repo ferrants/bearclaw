@@ -6,7 +6,16 @@ const METADATA_HOSTS = [
   'metadata.google.internal',
 ];
 
-export async function validateUrl(url: string): Promise<{ allowed: boolean; reason?: string }> {
+export interface SsrfValidationResult {
+  allowed: boolean;
+  reason?: string;
+  /** The resolved IP address to connect to (prevents DNS rebinding) */
+  resolvedIP?: string;
+  /** The original hostname for the Host header and TLS SNI */
+  hostname?: string;
+}
+
+export async function validateUrl(url: string): Promise<SsrfValidationResult> {
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -39,7 +48,7 @@ export async function validateUrl(url: string): Promise<{ allowed: boolean; reas
     return { allowed: false, reason: `Private IP blocked: ${ip}` };
   }
 
-  return { allowed: true };
+  return { allowed: true, resolvedIP: ip, hostname };
 }
 
 function isPrivateIP(ip: string): boolean {

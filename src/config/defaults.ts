@@ -1,5 +1,5 @@
 export const ALLOWED_COMMANDS = [
-  "git", "npm", "npx", "node", "cargo", "go", "python", "python3", "pip",
+  "git", "cargo", "go",
   "ls", "cat", "grep", "find", "echo", "pwd", "wc", "head", "tail",
   "sort", "uniq", "diff", "date", "which", "mkdir", "cp", "mv",
   "touch", "chmod",
@@ -42,3 +42,5 @@ export const WEB_FETCH_MAX_CHARS = 50_000;
 export const WEB_FETCH_TIMEOUT_MS = 30_000;
 export const READ_FILE_MAX_SIZE = 10_485_760;
 export const WRITE_FILE_MAX_SIZE = 10_485_760;
+export const BOOTSTRAP_FILE_MAX_CHARS = 20_000;
+export const BOOTSTRAP_TOTAL_MAX_CHARS = 24_000;

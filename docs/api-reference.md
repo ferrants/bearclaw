@@ -43,6 +43,7 @@ interface BearClawConfig {
     enabled: string[];
     telegram?: { botToken: string; allowFrom?: string[] };
   };
+  mcp: { servers: Record<string, McpServerConfig> };
   agents: Record<string, AgentConfig>;
   teams: Record<string, TeamConfig>;
   memory: { enabled: boolean; dir: string; alwaysLoad: string[] };
@@ -304,6 +305,41 @@ interface ToolHookRegistry {
 }
 ```
 
+## Skill Types
+
+### SkillDef
+
+```typescript
+interface SkillDef {
+  name: string;              // Skill identifier, kebab-case
+  description: string;       // When to use this skill
+  dir: string;               // Absolute path to skill directory
+  instructions: string;      // Markdown body of SKILL.md
+}
+```
+
+## MCP Types
+
+### McpServerConfig
+
+```typescript
+interface McpServerConfig {
+  command: string;           // Command to spawn MCP server
+  args?: string[];
+  env?: Record<string, string>;  // Supports ${VAR} expansion
+}
+```
+
+### McpToolDef
+
+```typescript
+interface McpToolDef {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+}
+```
+
 ## Agent Loop Types
 
 ### AgentLoopConfig
@@ -410,4 +446,6 @@ const WEB_FETCH_MAX_CHARS = 50_000;
 const WEB_FETCH_TIMEOUT_MS = 30_000;            // 30 seconds
 const READ_FILE_MAX_SIZE = 10_485_760;           // 10MB
 const WRITE_FILE_MAX_SIZE = 10_485_760;          // 10MB
+const BOOTSTRAP_FILE_MAX_CHARS = 20_000;         // Per-file truncation limit
+const BOOTSTRAP_TOTAL_MAX_CHARS = 24_000;        // Total system prompt budget
 ```

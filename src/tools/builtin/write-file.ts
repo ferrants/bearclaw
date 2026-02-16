@@ -39,6 +39,11 @@ export const writeFileTool: Tool = {
 
     const resolved = path.resolve(ctx.policy.workspaceDir, filePath);
 
+    // Symlink/resolved path validation
+    if (!(await ctx.policy.isResolvedPathAllowed(resolved))) {
+      return errorResult(`Resolved path not allowed: ${filePath}`);
+    }
+
     try {
       // Auto-create parent directories
       await fs.mkdir(path.dirname(resolved), { recursive: true });

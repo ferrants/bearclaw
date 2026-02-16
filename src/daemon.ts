@@ -29,7 +29,9 @@ import { spawnTool, setAgentLoopFn } from './tools/builtin/spawn.js';
 import { messageTool, setPublishOutbound } from './tools/builtin/message.js';
 import { runAgentLoop } from './agent/loop.js';
 import { buildSystemPrompt } from './agent/context.js';
-import { loadSession, saveSession } from './agent/session.js';
+import { loadSession, saveSession, clearSession } from './agent/session.js';
+import { loadSkills } from './skills/index.js';
+import { McpClient, createMcpTools } from './mcp/index.js';
 import { MessageBus } from './bus/bus.js';
 import { CliChannel } from './channels/cli.js';
 import { TelegramChannel } from './channels/telegram.js';
@@ -39,6 +41,7 @@ import { routeMessage } from './orchestrator/router.js';
 import { parseMentions, validateMentions } from './orchestrator/mentions.js';
 import { resolveTeam } from './orchestrator/team.js';
 import { GatewayServer } from './gateway/server.js';
+import { Scheduler } from './scheduler/index.js';
 
 const log = createLogger('daemon');
 
@@ -126,6 +129,21 @@ async function main() {
   // Wire spawn and message
   setAgentLoopFn(runAgentLoop);
 
+  // 5b. Load skills (workspace takes precedence over user-level)
+  const skills = loadSkills(path.resolve(config.workspace.path), configDir);
+
+  // 5c. Start MCP servers
+  const mcpClients: McpClient[] = [];
+  for (const [name, serverConfig] of Object.entries(config.mcp.servers)) {
+    const env = expandMcpEnv(serverConfig.env);
+    const client = new McpClient(serverConfig.command, serverConfig.args ?? [], env);
+    await client.start();
+    mcpClients.push(client);
+    for (const tool of await createMcpTools(name, client)) {
+      toolRegistry.register(tool);
+    }
+  }
+
   // 6. Hooks
   const hooks = new ToolHookRegistryImpl();
   // PolicyEngine as first before-hook
@@ -170,12 +188,25 @@ async function main() {
 
   // 8. Channels
   const channels: Channel[] = [];
+
+  // Clear all agent sessions for a given channel + chatId
+  const clearAllAgentSessions = (channelName: string, chatId: string) => {
+    for (const id of Object.keys(config.agents)) {
+      clearSession(sessionsDir, id, channelName, chatId);
+    }
+    log.info('Sessions cleared', { channel: channelName, chatId });
+  };
+
   if (config.channels.enabled.includes('cli')) {
-    channels.push(new CliChannel());
+    channels.push(new CliChannel({
+      onClearSession: (chatId) => clearAllAgentSessions('cli', chatId),
+    }));
   }
   if (config.channels.enabled.includes('telegram') && config.channels.telegram) {
     const tg = config.channels.telegram;
-    channels.push(new TelegramChannel(secrets.decrypt(tg.botToken), tg.allowFrom));
+    channels.push(new TelegramChannel(secrets.decrypt(tg.botToken), tg.allowFrom, {
+      onClearSession: (chatId) => clearAllAgentSessions('telegram', chatId),
+    }));
   }
 
   for (const channel of channels) {
@@ -192,8 +223,15 @@ async function main() {
     await gateway.start();
   }
 
-  // Main loop
+  // 11. Scheduler
   const abortController = new AbortController();
+  if (config.schedules.length > 0) {
+    const scheduler = new Scheduler(config.schedules, bus, abortController.signal);
+    scheduler.start();
+    log.info('Scheduler started', { rules: config.schedules.length });
+  }
+
+  // Main loop
   const sessionsDir = path.join(configDir, 'sessions');
 
   // Inbound processing
@@ -283,12 +321,14 @@ async function main() {
       providerFactory: createProvider,
     };
 
-    // Load session and build context
+    // Load session and build context (always refresh system prompt)
     const messages = loadSession(sessionsDir, agentId, channel, chatId);
-    if (messages.length === 0) {
-      const systemPrompt = buildSystemPrompt(agentConfig, config, toolRegistry);
-      if (systemPrompt) {
-        messages.push({ role: 'system', content: systemPrompt });
+    const systemPrompt = buildSystemPrompt(agentConfig, config, toolRegistry, undefined, skills);
+    if (systemPrompt) {
+      if (messages.length > 0 && messages[0].role === 'system') {
+        messages[0].content = systemPrompt;
+      } else {
+        messages.unshift({ role: 'system', content: systemPrompt });
       }
     }
 
@@ -381,6 +421,9 @@ async function main() {
     abortController.abort();
     conversationTracker.stop();
     await hooks.flush();
+    for (const client of mcpClients) {
+      await client.stop();
+    }
     for (const channel of channels) {
       await channel.stop();
     }
@@ -394,10 +437,20 @@ async function main() {
   log.info('BearClaw daemon started', {
     agents: Object.keys(config.agents),
     channels: config.channels.enabled,
+    schedules: config.schedules.length,
   });
 
   // Start loops
   await Promise.all([inboundLoop(), outboundLoop()]);
+}
+
+function expandMcpEnv(env?: Record<string, string>): Record<string, string> | undefined {
+  if (!env) return undefined;
+  const result: Record<string, string> = {};
+  for (const [k, v] of Object.entries(env)) {
+    result[k] = v.replace(/\$\{(\w+)\}/g, (_match, varName) => process.env[varName] ?? '');
+  }
+  return result;
 }
 
 main().catch((err) => {

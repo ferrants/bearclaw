@@ -19,6 +19,7 @@ function makePolicy(overrides?: {
     overrides?.allowedCommands ?? ALLOWED_COMMANDS,
     overrides?.restrictedCommands ?? RESTRICTED_COMMANDS,
     overrides?.forbiddenPaths ?? FORBIDDEN_PATHS,
+    [],
     new ScopedRateLimiter({ global: 100 }),
   );
 }
@@ -84,7 +85,7 @@ describe('SecurityPolicy', () => {
       const policy = makePolicy();
       expect(policy.isCommandAllowed('git status')).toBe(true);
       expect(policy.isCommandAllowed('ls -la')).toBe(true);
-      expect(policy.isCommandAllowed('npm install')).toBe(true);
+      expect(policy.isCommandAllowed('cat file.txt')).toBe(true);
     });
 
     it('blocks non-whitelisted commands', () => {
@@ -113,6 +114,19 @@ describe('SecurityPolicy', () => {
       expect(policy.isCommandAllowed('ls > /tmp/out')).toBe(false);
     });
 
+    it('blocks process substitution', () => {
+      const policy = makePolicy();
+      expect(policy.isCommandAllowed('cat <(ls)')).toBe(false);
+      expect(policy.isCommandAllowed('diff <(ls /a) <(ls /b)')).toBe(false);
+      expect(policy.isCommandAllowed('ls | tee >(cat)')).toBe(false);
+    });
+
+    it('blocks here-strings and here-docs', () => {
+      const policy = makePolicy();
+      expect(policy.isCommandAllowed('cat <<EOF')).toBe(false);
+      expect(policy.isCommandAllowed('cat <<<hello')).toBe(false);
+    });
+
     it('handles chained commands (all must be allowed)', () => {
       const policy = makePolicy();
       expect(policy.isCommandAllowed('git add . && git commit -m "test"')).toBe(true);
@@ -139,7 +153,7 @@ describe('SecurityPolicy', () => {
 
     it('skips env assignments', () => {
       const policy = makePolicy();
-      expect(policy.isCommandAllowed('NODE_ENV=production node script.js')).toBe(true);
+      expect(policy.isCommandAllowed('NODE_ENV=production git status')).toBe(true);
     });
 
     it('handles path-based commands', () => {

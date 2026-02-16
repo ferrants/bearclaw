@@ -121,11 +121,11 @@ Sessions are scoped by three dimensions:
 
 ## Context Assembly
 
-The system prompt is built by `buildSystemPrompt()` from multiple sources, concatenated in order:
+The system prompt is built by `buildSystemPrompt()` from multiple sources, concatenated in order. Each section is wrapped with a `##` heading so the LLM can distinguish between sources.
 
 ### 1. System Prompt Files
 
-Files listed in `AgentConfig.systemPromptFiles` are loaded and concatenated. These are your agent's identity and instructions:
+Files listed in `AgentConfig.systemPromptFiles` are loaded and wrapped with `## {filename}` headings:
 
 ```json
 {
@@ -137,17 +137,37 @@ Files listed in `AgentConfig.systemPromptFiles` are loaded and concatenated. The
 }
 ```
 
+This produces:
+```
+## SOUL.md
+{content of SOUL.md}
+
+## IDENTITY.md
+{content of IDENTITY.md}
+```
+
 ### 2. Tool Descriptions
 
-A summary of available tools (names and short descriptions) is appended so the agent knows what tools it can use.
+A summary of available tools (names and short descriptions) is appended under `## Tools` so the agent knows what tools it can use. This includes both built-in and skill-provided tools.
 
 ### 3. Memory Files
 
-If memory is enabled, files listed in `memory.alwaysLoad` (default: `["active-tasks.md"]`) are loaded from the memory directory and appended to the system prompt. This gives agents persistent context across sessions.
+If memory is enabled, files listed in `memory.alwaysLoad` (default: `["active-tasks.md"]`) are loaded from the memory directory and appended under `## Memory: {filename}`. This gives agents persistent context across sessions.
 
-### 4. Team Context
+### 4. Skills
+
+If any skills are loaded from `{workspace}/skills/`, their names and descriptions are listed under `## Available Skills`. See [Skills](skills.md) for details.
+
+### 5. Team Context
 
 If the agent is part of a team, teammate names, team purpose, and mention syntax (`[@agent: message]`) are appended.
+
+### Truncation
+
+To prevent large files from blowing up the context window, the system prompt applies truncation at two levels:
+
+- **Per-file limit**: 20,000 characters. Files exceeding this are truncated with 70% from the head and 20% from the tail, with a `[...truncated...]` marker in between.
+- **Total budget**: 24,000 characters. The assembled prompt is truncated with the same head/tail strategy if it exceeds the budget.
 
 ## CLI vs Daemon
 

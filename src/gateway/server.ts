@@ -85,14 +85,25 @@ export class GatewayServer {
     }
   }
 
+  private parseJson(body: string, res: http.ServerResponse): Record<string, unknown> | null {
+    try {
+      return JSON.parse(body) as Record<string, unknown>;
+    } catch {
+      this.sendJson(res, 400, { error: 'Invalid JSON' });
+      return null;
+    }
+  }
+
   private async handlePair(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     const body = await this.readBody(req);
-    const { sessionId } = JSON.parse(body);
+    const parsed = this.parseJson(body, res);
+    if (!parsed) return;
+    const { sessionId } = parsed;
     if (!sessionId) {
       return this.sendJson(res, 400, { error: 'sessionId required' });
     }
 
-    const code = this.pairing.generateCode(sessionId);
+    const code = this.pairing.generateCode(sessionId as string);
     log.info('Pairing code generated', { sessionId });
     // Code displayed to user via separate channel (e.g., CLI)
     this.sendJson(res, 200, { message: 'Pairing code generated. Check the BearClaw console.' });
@@ -100,12 +111,14 @@ export class GatewayServer {
 
   private async handlePairVerify(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     const body = await this.readBody(req);
-    const { sessionId, code } = JSON.parse(body);
+    const parsed = this.parseJson(body, res);
+    if (!parsed) return;
+    const { sessionId, code } = parsed;
     if (!sessionId || !code) {
       return this.sendJson(res, 400, { error: 'sessionId and code required' });
     }
 
-    const result = this.pairing.verifyCode(sessionId, code);
+    const result = this.pairing.verifyCode(sessionId as string, code as string);
     if (result.success) {
       this.sendJson(res, 200, { token: result.token });
     } else {
@@ -127,7 +140,9 @@ export class GatewayServer {
     }
 
     const body = await this.readBody(req);
-    const { chatId, message } = JSON.parse(body);
+    const parsed = this.parseJson(body, res);
+    if (!parsed) return;
+    const { chatId, message } = parsed;
     if (!message) {
       return this.sendJson(res, 400, { error: 'message required' });
     }
@@ -135,9 +150,9 @@ export class GatewayServer {
     this.bus.publishInbound({
       channel: 'gateway',
       sender: 'gateway',
-      chatId: chatId ?? 'gateway',
+      chatId: (chatId as string) ?? 'gateway',
       messageId: `gw_${Date.now()}`,
-      message,
+      message: message as string,
       timestamp: Date.now(),
     });
 

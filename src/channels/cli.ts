@@ -6,10 +6,19 @@ import { createLogger } from '../logging.js';
 
 const log = createLogger('cli-channel');
 
+export interface CliChannelOptions {
+  onClearSession?: (chatId: string) => void;
+}
+
 export class CliChannel implements Channel {
   name = 'cli';
   private bus: MessageBus | null = null;
   private rl: readline.Interface | null = null;
+  private onClearSession?: (chatId: string) => void;
+
+  constructor(options?: CliChannelOptions) {
+    this.onClearSession = options?.onClearSession;
+  }
 
   async start(bus: MessageBus): Promise<void> {
     this.bus = bus;
@@ -19,7 +28,7 @@ export class CliChannel implements Channel {
       output: process.stdout,
     });
 
-    process.stdout.write('\nBearClaw CLI\nType "help" for commands, "quit" to exit.\n\n> ');
+    process.stdout.write('\nBearClaw CLI\nType /help for commands.\n\n> ');
 
     this.rl.on('line', (line: string) => {
       const input = line.trim();
@@ -28,16 +37,23 @@ export class CliChannel implements Channel {
         return;
       }
 
-      if (input === 'quit' || input === 'exit') {
+      if (input === '/exit' || input === 'quit' || input === 'exit') {
         process.stdout.write('Goodbye.\n');
         process.exit(0);
       }
 
-      if (input === 'help' || input === '?') {
+      if (input === '/new') {
+        this.onClearSession?.('cli');
+        process.stdout.write('Conversation cleared.\n\n> ');
+        return;
+      }
+
+      if (input === '/help' || input === 'help' || input === '?') {
         process.stdout.write(
           'Commands:\n' +
-          '  help, ?    — Show this help\n' +
-          '  quit, exit — Exit BearClaw\n' +
+          '  /new     — Clear conversation and start fresh\n' +
+          '  /exit    — Exit BearClaw\n' +
+          '  /help    — Show this help\n' +
           '  (anything else is sent as a message)\n\n> '
         );
         return;

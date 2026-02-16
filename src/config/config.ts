@@ -21,7 +21,10 @@ export function getConfigDir(): string {
 }
 
 export function getConfigPath(): string {
-  return path.join(resolveConfigDir(), 'config.json');
+  const dir = resolveConfigDir();
+  const jsoncPath = path.join(dir, 'config.jsonc');
+  if (fs.existsSync(jsoncPath)) return jsoncPath;
+  return path.join(dir, 'config.json');
 }
 
 export function defaultConfig(): BearClawConfig {
@@ -55,6 +58,9 @@ export function defaultConfig(): BearClawConfig {
     channels: {
       enabled: ['cli'],
     },
+    mcp: {
+      servers: {},
+    },
     agents: {
       default: {
         name: 'default',
@@ -73,6 +79,7 @@ export function defaultConfig(): BearClawConfig {
       ...POLICY_DEFAULTS,
       rules: [],
     },
+    schedules: [],
     monitoring: {
       logLevel: 'info',
       heartbeatInterval: 3600,
@@ -87,7 +94,7 @@ export function loadConfig(): BearClawConfig {
   let config: BearClawConfig;
   try {
     const raw = fs.readFileSync(configPath, 'utf8');
-    const parsed = JSON.parse(raw);
+    const parsed = JSON.parse(stripJsonc(raw));
     config = deepMerge(defaults as unknown as Record<string, unknown>, parsed) as unknown as BearClawConfig;
   } catch {
     config = defaults;
@@ -113,7 +120,7 @@ export function loadConfig(): BearClawConfig {
 export function saveConfig(config: BearClawConfig): void {
   const configDir = resolveConfigDir();
   fs.mkdirSync(configDir, { recursive: true });
-  fs.writeFileSync(getConfigPath(), JSON.stringify(config, null, 2));
+  fs.writeFileSync(getConfigPath(), JSON.stringify(config, null, 2), { mode: 0o600 });
 }
 
 /**
@@ -144,6 +151,79 @@ export function encryptConfigSecrets(config: BearClawConfig, encrypt: (plaintext
   }
 
   return changed;
+}
+
+/**
+ * Strip // line comments, /* block comments *​/, and trailing commas from JSONC.
+ * Respects quoted strings — comments inside strings are left alone.
+ */
+export function stripJsonc(text: string): string {
+  let result = '';
+  let i = 0;
+  while (i < text.length) {
+    // String literal — pass through unchanged
+    if (text[i] === '"') {
+      result += '"';
+      i++;
+      while (i < text.length && text[i] !== '"') {
+        if (text[i] === '\\') {
+          result += text[i] + (text[i + 1] ?? '');
+          i += 2;
+        } else {
+          result += text[i];
+          i++;
+        }
+      }
+      if (i < text.length) {
+        result += '"';
+        i++;
+      }
+    }
+    // Line comment
+    else if (text[i] === '/' && text[i + 1] === '/') {
+      i += 2;
+      while (i < text.length && text[i] !== '\n') i++;
+    }
+    // Block comment
+    else if (text[i] === '/' && text[i + 1] === '*') {
+      i += 2;
+      while (i < text.length && !(text[i] === '*' && text[i + 1] === '/')) i++;
+      i += 2; // skip */
+    }
+    // Trailing comma before ] or }
+    else if (text[i] === ',') {
+      // Look ahead past whitespace/comments for ] or }
+      let j = i + 1;
+      while (j < text.length && /\s/.test(text[j])) j++;
+      // Also skip comments after the comma
+      while (j < text.length) {
+        if (text[j] === '/' && text[j + 1] === '/') {
+          j += 2;
+          while (j < text.length && text[j] !== '\n') j++;
+          while (j < text.length && /\s/.test(text[j])) j++;
+        } else if (text[j] === '/' && text[j + 1] === '*') {
+          j += 2;
+          while (j < text.length && !(text[j] === '*' && text[j + 1] === '/')) j++;
+          j += 2;
+          while (j < text.length && /\s/.test(text[j])) j++;
+        } else {
+          break;
+        }
+      }
+      if (j < text.length && (text[j] === ']' || text[j] === '}')) {
+        // Skip the trailing comma
+        i++;
+      } else {
+        result += text[i];
+        i++;
+      }
+    }
+    else {
+      result += text[i];
+      i++;
+    }
+  }
+  return result;
 }
 
 function deepMerge(target: Record<string, unknown>, source: Record<string, unknown>): Record<string, unknown> {

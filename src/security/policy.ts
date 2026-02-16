@@ -42,7 +42,20 @@ export class SecurityPolicy {
   async isResolvedPathAllowed(resolvedPath: string): Promise<boolean> {
     try {
       const fsPromises = await import('node:fs/promises');
-      const realPath = await fsPromises.realpath(resolvedPath);
+
+      // If file doesn't exist yet (new file), resolve the parent directory instead
+      let realPath: string;
+      try {
+        realPath = await fsPromises.realpath(resolvedPath);
+      } catch {
+        const parentDir = path.dirname(resolvedPath);
+        try {
+          const realParent = await fsPromises.realpath(parentDir);
+          realPath = path.join(realParent, path.basename(resolvedPath));
+        } catch {
+          return false;
+        }
+      }
 
       const realWorkspace = await fsPromises.realpath(this.workspaceDir);
       if (realPath === realWorkspace || realPath.startsWith(realWorkspace + path.sep)) {
@@ -74,6 +87,14 @@ export class SecurityPolicy {
     if (command.includes('`')) return false;
     if (command.includes('$(')) return false;
     if (command.includes('${')) return false;
+
+    // Block process substitution
+    if (command.includes('<(')) return false;
+    if (command.includes('>(')) return false;
+
+    // Block here-strings and here-docs
+    if (command.includes('<<<')) return false;
+    if (command.includes('<<')) return false;
 
     // Block output redirection
     if (command.includes('>')) return false;

@@ -58,6 +58,9 @@ export interface BearClawConfig {
       allowFrom?: string[];
     };
   };
+  mcp: {
+    servers: Record<string, McpServerConfig>;
+  };
   agents: Record<string, AgentConfig>;
   teams: Record<string, TeamConfig>;
   memory: {
@@ -66,10 +69,24 @@ export interface BearClawConfig {
     alwaysLoad: string[];
   };
   policy: PolicyConfig;
+  schedules: ScheduleRule[];
   monitoring: {
     logLevel: "debug" | "info" | "warn" | "error";
     heartbeatInterval: number;
   };
+}
+
+export interface ScheduleRule {
+  cron?: string;
+  interval?: string;
+  agent?: string;
+  message: string;
+}
+
+export interface McpServerConfig {
+  command: string;
+  args?: string[];
+  env?: Record<string, string>;
 }
 
 export interface AgentConfig {

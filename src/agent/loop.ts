@@ -42,7 +42,8 @@ export async function runAgentLoop(
 
     // Call LLM
     const toolDefs = tools.toProviderDefs();
-    log.debug('LLM call', { iteration, model, toolCount: toolDefs.length });
+    const agentId = ctx.currentAgentConfig.name;
+    log.info('LLM call', { agentId, iteration, model, messageCount: messages.length });
 
     const response = await provider.chat(messages, toolDefs, model, {
       ...options,
@@ -52,13 +53,18 @@ export async function runAgentLoop(
     // Track tokens
     if (response.usage) {
       totalTokens += response.usage.totalTokens;
+      log.debug('Token usage', { agentId, iteration, tokens: response.usage });
     }
 
     // No tool calls → done
     if (response.toolCalls.length === 0) {
-      log.debug('Agent loop complete', { iteration, reason: response.finishReason });
+      log.info('Loop complete', { agentId, iteration, reason: response.finishReason, totalTokens, responseLength: response.content.length });
       return { content: response.content, iterations: iteration, toolsUsed, totalTokens };
     }
+
+    // Log what the LLM wants to do
+    const toolNames = response.toolCalls.map(tc => tc.name);
+    log.info('Tool calls requested', { agentId, iteration, tools: toolNames });
 
     // Append assistant message
     messages.push({
@@ -70,14 +76,27 @@ export async function runAgentLoop(
     // Execute tool calls in parallel
     const toolResults = await Promise.all(
       response.toolCalls.map(async (tc) => {
+        const argSummary = summarizeArgs(tc.name, tc.arguments);
+        log.info('Tool executing', { agentId, tool: tc.name, ...argSummary });
+
         // Before hook (blocking)
         const hookResult = await hooks.runBefore(tc.name, tc.arguments, ctx);
 
         let result: ToolResult;
         if (!hookResult.proceed) {
           result = errorResult(`Tool call blocked by policy: ${tc.name}`);
+          log.warn('Tool blocked', { agentId, tool: tc.name });
         } else {
+          const start = Date.now();
           result = await tools.execute(ctx, tc.name, hookResult.args);
+          const durationMs = Date.now() - start;
+          log.info('Tool completed', {
+            agentId,
+            tool: tc.name,
+            durationMs,
+            isError: result.isError,
+            resultLength: result.forLLM.length,
+          });
         }
 
         // After hook (fire-and-forget, tracked for flush)
@@ -98,10 +117,33 @@ export async function runAgentLoop(
     }
   }
 
+  log.warn('Max iterations reached', { agentId: ctx.currentAgentConfig.name, maxIterations, totalTokens });
   return {
     content: 'Reached maximum iterations without a final response.',
     iterations: iteration,
     toolsUsed,
     totalTokens,
   };
+}
+
+function summarizeArgs(toolName: string, args: Record<string, unknown>): Record<string, unknown> {
+  switch (toolName) {
+    case 'exec':
+      return { command: args.command };
+    case 'read_file':
+    case 'write_file':
+    case 'edit_file':
+    case 'list_dir':
+      return { path: args.path };
+    case 'search':
+      return { pattern: args.pattern, path: args.path };
+    case 'web_fetch':
+      return { url: args.url };
+    case 'spawn':
+      return { task: (args.task as string)?.slice(0, 100), agentId: args.agentId };
+    case 'message':
+      return { channel: args.channel, chatId: args.chatId };
+    default:
+      return {};
+  }
 }

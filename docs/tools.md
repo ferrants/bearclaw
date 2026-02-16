@@ -1,6 +1,6 @@
 # Tools
 
-BearClaw provides a tool system with 9 built-in tools, JSON Schema validation, and a hook pipeline for policy enforcement and extensibility.
+BearClaw provides a tool system with 9 built-in tools, user-defined skill tools (script-based and MCP), JSON Schema validation, and a hook pipeline for policy enforcement and extensibility.
 
 ## Tool Result Types
 
@@ -126,6 +126,12 @@ Send a message to a specific channel and chat.
 | `content` | string | yes | Message content |
 
 Used for cross-channel communication. The PolicyEngine controls access via the `"message"` scope.
+
+## MCP Tools
+
+BearClaw can connect to MCP (Model Context Protocol) servers configured in `config.json`. Tools discovered from each server are registered with a `{serverName}_{toolName}` prefix and go through the same security pipeline (hooks, policy, rate limiting) as built-in tools.
+
+See [Configuration](configuration.md#mcp-servers) for setup.
 
 ## Tool Registry
 
