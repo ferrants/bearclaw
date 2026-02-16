@@ -1,0 +1,95 @@
+src/config/schema.ts
+  6f099aeba50faed7 1-138
+src/security/ssrf.ts
+  6f099aeba50faed7 1-80
+src/security/secrets.ts
+  6f099aeba50faed7 1-52
+src/security/policy-engine.ts
+  6f099aeba50faed7 1-113
+tests/security/ssrf.test.ts
+  6f099aeba50faed7 1-47
+plans/phase1-foundation.md
+  6f099aeba50faed7 1-62
+tests/security/secrets.test.ts
+  6f099aeba50faed7 1-84
+src/security/policy.ts
+  6f099aeba50faed7 1-123
+src/security/approvals.ts
+  6f099aeba50faed7 1-83
+src/security/inline-allow.ts
+  6f099aeba50faed7 1-90
+src/config/config.ts
+  6f099aeba50faed7 1-110
+plans/ARCHITECTURE-REVIEW.md
+  f8e4584b4e13be6a 1-554
+plans/ARCHITECTURE-v2.md
+  84ba7fa18bd4dd1b 1-1590
+src/logging.ts
+  6f099aeba50faed7 1-37
+src/events.ts
+  6f099aeba50faed7 1-42
+.gitignore
+  6f099aeba50faed7 1-8
+src/cli/policy-status.ts
+  6f099aeba50faed7 1-50
+tests/security/rate-limiter.test.ts
+  6f099aeba50faed7 1-86
+tsconfig.json
+  6f099aeba50faed7 1-20
+src/config/defaults.ts
+  6f099aeba50faed7 1-44
+tests/security/policy.test.ts
+  6f099aeba50faed7 1-173
+package.json
+  6f099aeba50faed7 1-29
+vitest.config.ts
+  6f099aeba50faed7 1-8
+src/security/rate-limiter.ts
+  6f099aeba50faed7 1-71
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.3",
+  "base_commit_sha": "9eca610c8da6c9f3f86f74e9255c6c9aecb66cb8",
+  "prompts": {
+    "6f099aeba50faed7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e94ffe64-db99-4bdf-b503-966d1ecb02ca",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "matt ferrante <mferrante3@gmail.com>",
+      "messages": [],
+      "total_additions": 1567,
+      "total_deletions": 17,
+      "accepted_lines": 1550,
+      "overriden_lines": 0
+    },
+    "84ba7fa18bd4dd1b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b772403d-7664-473c-9940-5c233d780751",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "matt ferrante <mferrante3@gmail.com>",
+      "messages": [],
+      "total_additions": 1590,
+      "total_deletions": 0,
+      "accepted_lines": 1590,
+      "overriden_lines": 0
+    },
+    "f8e4584b4e13be6a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9156288d-01c6-4bbe-a367-d69434695dbd",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "matt ferrante <mferrante3@gmail.com>",
+      "messages": [],
+      "total_additions": 559,
+      "total_deletions": 5,
+      "accepted_lines": 554,
+      "overriden_lines": 0
+    }
+  }
+}
