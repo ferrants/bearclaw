@@ -1,8 +1,6 @@
 import type { LLMProvider, Message } from '../providers/types.js';
-import type { ToolContext, ToolResult } from '../tools/types.js';
+import type { ToolContext, ToolResult, ToolRegistry, ToolHookRegistry } from '../tools/types.js';
 import { errorResult } from '../tools/types.js';
-import type { ToolRegistryImpl } from '../tools/registry.js';
-import type { ToolHookRegistryImpl } from '../tools/hooks.js';
 import { createLogger } from '../logging.js';
 
 const log = createLogger('agent-loop');
@@ -10,8 +8,8 @@ const log = createLogger('agent-loop');
 export interface AgentLoopConfig {
   provider: LLMProvider;
   model: string;
-  tools: ToolRegistryImpl;
-  hooks: ToolHookRegistryImpl;
+  tools: ToolRegistry;
+  hooks: ToolHookRegistry;
   maxIterations: number;
   maxTotalTokens?: number;
   options?: { maxTokens?: number; temperature?: number; onToken?: (token: string) => void };
