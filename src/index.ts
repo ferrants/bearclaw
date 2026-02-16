@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import * as path from 'node:path';
-import { loadConfig, getConfigDir } from './config/config.js';
+import { loadConfig, getConfigDir, encryptConfigSecrets } from './config/config.js';
 import { setLogLevel, createLogger } from './logging.js';
 import { SecretStore } from './security/secrets.js';
 import { SecurityPolicy } from './security/policy.js';
@@ -37,8 +37,11 @@ async function main() {
 
   log.info('BearClaw CLI starting');
 
-  // Initialize secrets
+  // Initialize secrets and encrypt any plaintext keys
   const secrets = new SecretStore(configDir, config.security.encrypt);
+  if (config.security.encrypt) {
+    encryptConfigSecrets(config, (v) => secrets.encrypt(v), SecretStore.isEncrypted);
+  }
 
   // Initialize security
   const rateLimiter = new ScopedRateLimiter(config.security.rateLimits);

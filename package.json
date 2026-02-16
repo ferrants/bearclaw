@@ -4,14 +4,45 @@
   "description": "AI agent framework with defense-in-depth security, multi-agent orchestration, and provider abstraction",
   "type": "module",
   "main": "dist/index.js",
+  "bin": {
+    "bearclaw": "dist/index.js",
+    "bearclaw-daemon": "dist/daemon.js"
+  },
+  "files": [
+    "dist/**/*.js",
+    "dist/**/*.d.ts",
+    "dist/**/*.js.map"
+  ],
   "scripts": {
     "build": "tsc",
     "dev": "tsx src/index.ts",
     "daemon": "tsx src/daemon.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ferrants/bearclaw.git"
+  },
+  "homepage": "https://github.com/ferrants/bearclaw",
+  "bugs": {
+    "url": "https://github.com/ferrants/bearclaw/issues"
+  },
+  "author": "Matt Ferrante <matt@heyferrante.com>",
+  "license": "MIT",
+  "keywords": [
+    "ai",
+    "agent",
+    "framework",
+    "llm",
+    "multi-agent",
+    "anthropic",
+    "openai",
+    "ollama",
+    "security"
+  ],
   "dependencies": {
     "@noble/ciphers": "^1.0.0",
     "node-telegram-bot-api": "^0.67.0"

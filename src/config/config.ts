@@ -8,22 +8,27 @@ import {
   FORBIDDEN_PATHS,
   POLICY_DEFAULTS,
 } from './defaults.js';
+import { createLogger } from '../logging.js';
 
-const CONFIG_DIR = path.join(os.homedir(), '.bearclaw');
-const CONFIG_PATH = path.join(CONFIG_DIR, 'config.json');
+const log = createLogger('config');
+
+function resolveConfigDir(): string {
+  return process.env.BEARCLAW_CONFIG_DIR ?? path.join(os.homedir(), '.bearclaw');
+}
 
 export function getConfigDir(): string {
-  return CONFIG_DIR;
+  return resolveConfigDir();
 }
 
 export function getConfigPath(): string {
-  return CONFIG_PATH;
+  return path.join(resolveConfigDir(), 'config.json');
 }
 
 export function defaultConfig(): BearClawConfig {
+  const configDir = resolveConfigDir();
   return {
     workspace: {
-      path: path.join(CONFIG_DIR, 'workspace'),
+      path: path.join(configDir, 'workspace'),
     },
     security: {
       autonomy: AutonomyLevel.Supervised,
@@ -76,9 +81,10 @@ export function defaultConfig(): BearClawConfig {
 
 export function loadConfig(): BearClawConfig {
   const defaults = defaultConfig();
+  const configPath = getConfigPath();
 
   try {
-    const raw = fs.readFileSync(CONFIG_PATH, 'utf8');
+    const raw = fs.readFileSync(configPath, 'utf8');
     const parsed = JSON.parse(raw);
     return deepMerge(defaults as unknown as Record<string, unknown>, parsed) as unknown as BearClawConfig;
   } catch {
@@ -87,8 +93,39 @@ export function loadConfig(): BearClawConfig {
 }
 
 export function saveConfig(config: BearClawConfig): void {
-  fs.mkdirSync(CONFIG_DIR, { recursive: true });
-  fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
+  const configDir = resolveConfigDir();
+  fs.mkdirSync(configDir, { recursive: true });
+  fs.writeFileSync(getConfigPath(), JSON.stringify(config, null, 2));
+}
+
+/**
+ * Encrypt plaintext API keys in the config and rewrite config.json.
+ * Called once at startup. Idempotent — already-encrypted values are skipped.
+ */
+export function encryptConfigSecrets(config: BearClawConfig, encrypt: (plaintext: string) => string, isEncrypted: (value: string) => boolean): boolean {
+  let changed = false;
+
+  if (config.providers.anthropic?.apiKey && !isEncrypted(config.providers.anthropic.apiKey)) {
+    config.providers.anthropic.apiKey = encrypt(config.providers.anthropic.apiKey);
+    changed = true;
+  }
+
+  if (config.providers.openai?.apiKey && !isEncrypted(config.providers.openai.apiKey)) {
+    config.providers.openai.apiKey = encrypt(config.providers.openai.apiKey);
+    changed = true;
+  }
+
+  if (config.channels.telegram?.botToken && !isEncrypted(config.channels.telegram.botToken)) {
+    config.channels.telegram.botToken = encrypt(config.channels.telegram.botToken);
+    changed = true;
+  }
+
+  if (changed) {
+    saveConfig(config);
+    log.info('Encrypted plaintext secrets in config');
+  }
+
+  return changed;
 }
 
 function deepMerge(target: Record<string, unknown>, source: Record<string, unknown>): Record<string, unknown> {
