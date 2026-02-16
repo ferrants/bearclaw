@@ -1,0 +1,29 @@
+{
+  "name": "bearclaw",
+  "version": "0.1.0",
+  "description": "AI agent framework with defense-in-depth security, multi-agent orchestration, and provider abstraction",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "daemon": "tsx src/daemon.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@noble/ciphers": "^1.0.0",
+    "node-telegram-bot-api": "^0.67.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/node-telegram-bot-api": "^0.64.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

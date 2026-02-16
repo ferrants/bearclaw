@@ -1,0 +1,123 @@
+import * as path from 'node:path';
+import * as os from 'node:os';
+import { AutonomyLevel } from '../config/schema.js';
+import { type ScopedRateLimiter } from './rate-limiter.js';
+
+export class SecurityPolicy {
+  constructor(
+    public readonly autonomy: AutonomyLevel,
+    public readonly workspaceDir: string,
+    public readonly workspaceOnly: boolean,
+    public readonly allowedCommands: string[],
+    public readonly restrictedCommands: Record<string, string[]>,
+    public readonly forbiddenPaths: string[],
+    private readonly rateLimiter: ScopedRateLimiter,
+  ) {}
+
+  isPathAllowed(rawPath: string): boolean {
+    if (rawPath.includes('\0')) return false;
+
+    const normalized = path.normalize(rawPath);
+    if (normalized.startsWith('..')) return false;
+
+    if (this.workspaceOnly && path.isAbsolute(rawPath)) return false;
+
+    const resolved = path.resolve(this.workspaceDir, rawPath);
+    const expandedForbidden = this.forbiddenPaths.map(p =>
+      p.startsWith('~') ? p.replace('~', os.homedir()) : p
+    );
+    for (const forbidden of expandedForbidden) {
+      if (resolved === forbidden || resolved.startsWith(forbidden + path.sep)) return false;
+    }
+
+    return true;
+  }
+
+  async isResolvedPathAllowed(resolvedPath: string): Promise<boolean> {
+    try {
+      const fsPromises = await import('node:fs/promises');
+      const realWorkspace = await fsPromises.realpath(this.workspaceDir);
+      const realPath = await fsPromises.realpath(resolvedPath);
+      return realPath.startsWith(realWorkspace + path.sep) || realPath === realWorkspace;
+    } catch {
+      return false;
+    }
+  }
+
+  isCommandAllowed(command: string): boolean {
+    if (this.autonomy === AutonomyLevel.ReadOnly) return false;
+    if (this.autonomy === AutonomyLevel.Full) return true;
+
+    // Block subshell operators
+    if (command.includes('`')) return false;
+    if (command.includes('$(')) return false;
+    if (command.includes('${')) return false;
+
+    // Block output redirection
+    if (command.includes('>')) return false;
+
+    // Split on command separators
+    let normalized = command;
+    for (const sep of ['&&', '||']) {
+      normalized = normalized.replaceAll(sep, '\x00');
+    }
+    for (const sep of ['\n', ';', '|']) {
+      normalized = normalized.replaceAll(sep, '\x00');
+    }
+
+    let hasCommand = false;
+    for (const segment of normalized.split('\x00')) {
+      const trimmed = segment.trim();
+      if (!trimmed) continue;
+
+      const cmdPart = this.skipEnvAssignments(trimmed);
+      if (!cmdPart) continue;
+
+      const parts = cmdPart.split(/\s+/);
+      const baseCmd = parts[0]?.split('/').pop() || '';
+      if (!baseCmd) continue;
+
+      hasCommand = true;
+
+      // Check restricted commands first (allowed but with arg restrictions)
+      const blockedArgs = this.restrictedCommands[baseCmd];
+      if (blockedArgs) {
+        if (blockedArgs[0] === '*') return false;
+        for (const arg of parts.slice(1)) {
+          if (blockedArgs.some(blocked => arg.startsWith(blocked))) return false;
+        }
+        continue;
+      }
+
+      // Check standard allowlist
+      if (!this.allowedCommands.includes(baseCmd)) return false;
+    }
+
+    return hasCommand;
+  }
+
+  private skipEnvAssignments(s: string): string {
+    let rest = s;
+    while (true) {
+      const word = rest.split(/\s+/)[0];
+      if (!word) return rest;
+      if (word.includes('=') && /^[a-zA-Z_]/.test(word)) {
+        rest = rest.slice(word.length).trimStart();
+      } else {
+        return rest;
+      }
+    }
+  }
+
+  canAct(): boolean {
+    return this.autonomy !== AutonomyLevel.ReadOnly;
+  }
+
+  recordAction(scope?: string, agentId?: string): boolean {
+    return this.rateLimiter.record(scope, agentId);
+  }
+
+  isRateLimited(scope?: string, agentId?: string): boolean {
+    return this.rateLimiter.isLimited(scope, agentId);
+  }
+}
