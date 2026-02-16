@@ -1,0 +1,53 @@
+CHANGELOG.md
+  6f099aeba50faed7 1-18
+docs/README.md
+  6f099aeba50faed7 1-24
+docs/getting-started.md
+  6f099aeba50faed7 1-119
+CONTRIBUTING.md
+  6f099aeba50faed7 1-40
+LICENSE
+  6f099aeba50faed7 1-21
+docs/multi-agent.md
+  6f099aeba50faed7 1-172
+docs/providers.md
+  6f099aeba50faed7 1-153
+docs/architecture.md
+  6f099aeba50faed7 1-217
+docs/api-reference.md
+  6f099aeba50faed7 1-413
+docs/configuration.md
+  6f099aeba50faed7 1-309
+docs/agent-loop.md
+  6f099aeba50faed7 1-169
+docs/channels.md
+  6f099aeba50faed7 1-142
+README.md
+  6f099aeba50faed7 1-238
+docs/tools.md
+  6f099aeba50faed7 1-186
+docs/gateway.md
+  6f099aeba50faed7 1-134
+docs/security.md
+  6f099aeba50faed7 1-286
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.3",
+  "base_commit_sha": "fa35e7c1dc0fac4c6654dcfa1a4d2de6deb71b2f",
+  "prompts": {
+    "6f099aeba50faed7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e94ffe64-db99-4bdf-b503-966d1ecb02ca",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Matt Ferrante <matt@heyferrante.com>",
+      "messages": [],
+      "total_additions": 2641,
+      "total_deletions": 0,
+      "accepted_lines": 2641,
+      "overriden_lines": 0
+    }
+  }
+}
