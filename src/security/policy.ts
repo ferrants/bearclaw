@@ -11,6 +11,7 @@ export class SecurityPolicy {
     public readonly allowedCommands: string[],
     public readonly restrictedCommands: Record<string, string[]>,
     public readonly forbiddenPaths: string[],
+    public readonly allowedPaths: string[],
     private readonly rateLimiter: ScopedRateLimiter,
   ) {}
 
@@ -20,7 +21,12 @@ export class SecurityPolicy {
     const normalized = path.normalize(rawPath);
     if (normalized.startsWith('..')) return false;
 
-    if (this.workspaceOnly && path.isAbsolute(rawPath)) return false;
+    if (this.workspaceOnly && path.isAbsolute(rawPath)) {
+      const underAllowed = this.allowedPaths.some(
+        ap => normalized === ap || normalized.startsWith(ap + path.sep)
+      );
+      if (!underAllowed) return false;
+    }
 
     const resolved = path.resolve(this.workspaceDir, rawPath);
     const expandedForbidden = this.forbiddenPaths.map(p =>
@@ -36,9 +42,25 @@ export class SecurityPolicy {
   async isResolvedPathAllowed(resolvedPath: string): Promise<boolean> {
     try {
       const fsPromises = await import('node:fs/promises');
-      const realWorkspace = await fsPromises.realpath(this.workspaceDir);
       const realPath = await fsPromises.realpath(resolvedPath);
-      return realPath.startsWith(realWorkspace + path.sep) || realPath === realWorkspace;
+
+      const realWorkspace = await fsPromises.realpath(this.workspaceDir);
+      if (realPath === realWorkspace || realPath.startsWith(realWorkspace + path.sep)) {
+        return true;
+      }
+
+      for (const allowed of this.allowedPaths) {
+        try {
+          const realAllowed = await fsPromises.realpath(allowed);
+          if (realPath === realAllowed || realPath.startsWith(realAllowed + path.sep)) {
+            return true;
+          }
+        } catch {
+          // allowed path doesn't exist on disk, skip
+        }
+      }
+
+      return false;
     } catch {
       return false;
     }

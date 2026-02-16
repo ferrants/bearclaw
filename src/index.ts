@@ -154,6 +154,7 @@ async function main() {
 
   console.log('\nBearClaw CLI');
   console.log(`Agent: ${agentConfig.name} (${agentConfig.provider}/${model})`);
+  console.log(`Workspace: ${path.resolve(config.workspace.path)}`);
   console.log('Type "quit" to exit.\n');
 
   const prompt = () => {

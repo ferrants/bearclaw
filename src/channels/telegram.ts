@@ -38,6 +38,8 @@ export class TelegramChannel implements Channel {
       const text = msg.text ?? '';
       if (!text) return;
 
+      log.info('Message received', { chatId, senderId, text: text.slice(0, 100) });
+
       this.bus!.publishInbound({
         channel: 'telegram',
         sender: senderId,
@@ -68,5 +70,6 @@ export class TelegramChannel implements Channel {
     }
 
     await this.bot.sendMessage(msg.chatId, msg.content, options);
+    log.info('Message sent', { chatId: msg.chatId, length: msg.content.length });
   }
 }

@@ -14,6 +14,7 @@ export interface BearClawConfig {
     allowedCommands: string[];
     restrictedCommands: Record<string, string[]>;
     forbiddenPaths: string[];
+    allowedPaths: string[];
     rateLimits: {
       global: number;
       perAgent?: number;

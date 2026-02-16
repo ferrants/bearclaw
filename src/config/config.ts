@@ -36,6 +36,7 @@ export function defaultConfig(): BearClawConfig {
       allowedCommands: [...ALLOWED_COMMANDS],
       restrictedCommands: { ...RESTRICTED_COMMANDS },
       forbiddenPaths: [...FORBIDDEN_PATHS],
+      allowedPaths: [],
       rateLimits: {
         global: 20,
       },
@@ -83,13 +84,30 @@ export function loadConfig(): BearClawConfig {
   const defaults = defaultConfig();
   const configPath = getConfigPath();
 
+  let config: BearClawConfig;
   try {
     const raw = fs.readFileSync(configPath, 'utf8');
     const parsed = JSON.parse(raw);
-    return deepMerge(defaults as unknown as Record<string, unknown>, parsed) as unknown as BearClawConfig;
+    config = deepMerge(defaults as unknown as Record<string, unknown>, parsed) as unknown as BearClawConfig;
   } catch {
-    return defaults;
+    config = defaults;
   }
+
+  // Expand ~ in workspace path so all consumers get an absolute path
+  if (config.workspace.path.startsWith('~/')) {
+    config.workspace.path = path.join(os.homedir(), config.workspace.path.slice(2));
+  }
+
+  // Expand ~ in allowedPaths
+  if (config.security.allowedPaths) {
+    config.security.allowedPaths = config.security.allowedPaths.map(p =>
+      p.startsWith('~/') ? path.join(os.homedir(), p.slice(2)) : p
+    );
+  } else {
+    config.security.allowedPaths = [];
+  }
+
+  return config;
 }
 
 export function saveConfig(config: BearClawConfig): void {

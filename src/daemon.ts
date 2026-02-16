@@ -206,6 +206,7 @@ async function main() {
       }
 
       const { channel, sender, chatId, message } = inbound;
+      log.info('Inbound message', { channel, sender, chatId, length: message.length });
 
       // Parse inline allows
       const cleaned = inlineAllowStore.parseAndStore(message);
@@ -264,6 +265,7 @@ async function main() {
 
     const provider = createProvider(agentConfig.provider);
     const model = agentConfig.model ?? provider.defaultModel;
+    log.info('Processing message', { agentId, provider: agentConfig.provider, model, channel });
 
     const ctx = {
       signal: abortController.signal,
@@ -307,6 +309,7 @@ async function main() {
 
       messages.push({ role: 'assistant', content: result.content });
       saveSession(sessionsDir, agentId, channel, chatId, messages);
+      log.info('Agent responded', { agentId, channel, iterations: result.iterations, toolCalls: result.toolsUsed.length });
 
       eventBus.emit('agent:stopped', { agentId, reason: 'completed' });
 
