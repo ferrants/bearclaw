@@ -40,6 +40,7 @@ export function defaultConfig(): BearClawConfig {
       restrictedCommands: { ...RESTRICTED_COMMANDS },
       forbiddenPaths: [...FORBIDDEN_PATHS],
       allowedPaths: [],
+      allowSubshells: false,
       rateLimits: {
         global: 20,
       },

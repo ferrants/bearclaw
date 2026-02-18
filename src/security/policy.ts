@@ -13,6 +13,7 @@ export class SecurityPolicy {
     public readonly forbiddenPaths: string[],
     public readonly allowedPaths: string[],
     private readonly rateLimiter: ScopedRateLimiter,
+    public readonly allowSubshells: boolean = false,
   ) {}
 
   isPathAllowed(rawPath: string): boolean {
@@ -83,21 +84,23 @@ export class SecurityPolicy {
     if (this.autonomy === AutonomyLevel.ReadOnly) return false;
     if (this.autonomy === AutonomyLevel.Full) return true;
 
-    // Block subshell operators
-    if (command.includes('`')) return false;
-    if (command.includes('$(')) return false;
-    if (command.includes('${')) return false;
+    if (!this.allowSubshells) {
+      // Block subshell operators
+      if (command.includes('`')) return false;
+      if (command.includes('$(')) return false;
+      if (command.includes('${')) return false;
 
-    // Block process substitution
-    if (command.includes('<(')) return false;
-    if (command.includes('>(')) return false;
+      // Block process substitution
+      if (command.includes('<(')) return false;
+      if (command.includes('>(')) return false;
 
-    // Block here-strings and here-docs
-    if (command.includes('<<<')) return false;
-    if (command.includes('<<')) return false;
+      // Block here-strings and here-docs
+      if (command.includes('<<<')) return false;
+      if (command.includes('<<')) return false;
+    }
 
     // Block output redirection
-    if (command.includes('>')) return false;
+    if (command.includes('>') && !this.allowSubshells) return false;
 
     // Split on command separators
     let normalized = command;

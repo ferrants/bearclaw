@@ -1,3 +1,5 @@
+import { dim } from './cli/colors.js';
+
 type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
 const LEVEL_ORDER: Record<LogLevel, number> = {
@@ -24,7 +26,7 @@ function emit(level: LogLevel, subsystem: string, msg: string, data?: Record<str
   };
   if (data) entry.data = data;
 
-  process.stderr.write(JSON.stringify(entry) + '\n');
+  process.stderr.write(dim(JSON.stringify(entry)) + '\n');
 }
 
 export function createLogger(subsystem: string) {

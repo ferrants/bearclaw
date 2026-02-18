@@ -11,6 +11,7 @@ function makePolicy(overrides?: {
   allowedCommands?: string[];
   restrictedCommands?: Record<string, string[]>;
   forbiddenPaths?: string[];
+  allowSubshells?: boolean;
 }): SecurityPolicy {
   return new SecurityPolicy(
     overrides?.autonomy ?? AutonomyLevel.Supervised,
@@ -21,6 +22,7 @@ function makePolicy(overrides?: {
     overrides?.forbiddenPaths ?? FORBIDDEN_PATHS,
     [],
     new ScopedRateLimiter({ global: 100 }),
+    overrides?.allowSubshells ?? false,
   );
 }
 
@@ -165,6 +167,59 @@ describe('SecurityPolicy', () => {
       const policy = makePolicy();
       expect(policy.isCommandAllowed('')).toBe(false);
       expect(policy.isCommandAllowed('   ')).toBe(false);
+    });
+
+    describe('with allowSubshells: true', () => {
+      it('allows $() subshells', () => {
+        const policy = makePolicy({ allowSubshells: true });
+        expect(policy.isCommandAllowed('echo $(whoami)')).toBe(true);
+      });
+
+      it('allows backtick subshells', () => {
+        const policy = makePolicy({ allowSubshells: true });
+        expect(policy.isCommandAllowed('echo `date`')).toBe(true);
+      });
+
+      it('allows ${} expansions', () => {
+        const policy = makePolicy({ allowSubshells: true });
+        expect(policy.isCommandAllowed('echo ${PATH}')).toBe(true);
+      });
+
+      it('allows output redirection', () => {
+        const policy = makePolicy({ allowSubshells: true });
+        expect(policy.isCommandAllowed('ls > /tmp/out')).toBe(true);
+      });
+
+      it('allows process substitution', () => {
+        const policy = makePolicy({ allowSubshells: true });
+        expect(policy.isCommandAllowed('diff <(ls /a) <(ls /b)')).toBe(true);
+      });
+
+      it('allows here-docs and here-strings', () => {
+        const policy = makePolicy({ allowSubshells: true });
+        expect(policy.isCommandAllowed('cat <<EOF')).toBe(true);
+        expect(policy.isCommandAllowed('cat <<<hello')).toBe(true);
+      });
+
+      it('allows real-world AWS command with subshell', () => {
+        const policy = makePolicy({ allowSubshells: true, allowedCommands: [...ALLOWED_COMMANDS, 'aws'] });
+        expect(policy.isCommandAllowed('aws logs filter-log-events --log-group-name "/aws/lambda/MyFunc" --start-time $(date -d \'1 hour ago\' +%s000) --region us-west-2')).toBe(true);
+      });
+
+      it('still blocks non-whitelisted commands', () => {
+        const policy = makePolicy({ allowSubshells: true });
+        expect(policy.isCommandAllowed('rm -rf /')).toBe(false);
+      });
+
+      it('still blocks restricted command args', () => {
+        const policy = makePolicy({ allowSubshells: true });
+        expect(policy.isCommandAllowed('curl -o /tmp/file https://example.com')).toBe(false);
+      });
+
+      it('still blocks all commands in ReadOnly mode', () => {
+        const policy = makePolicy({ autonomy: AutonomyLevel.ReadOnly, allowSubshells: true });
+        expect(policy.isCommandAllowed('echo $(date)')).toBe(false);
+      });
     });
   });
 

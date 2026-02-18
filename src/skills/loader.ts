@@ -93,11 +93,17 @@ function parseSkillFile(filePath: string, skillDir: string): SkillDef | null {
     return null;
   }
 
+  const rawAllowed = data['allowed-tools'] as string | undefined;
+  const allowedTools = rawAllowed
+    ? rawAllowed.split(/\s+/).filter(Boolean)
+    : undefined;
+
   return {
     name,
     description,
     dir: skillDir,
     instructions: body.trim(),
+    allowedTools,
     disableModelInvocation: data['disable-model-invocation'] === true ? true : undefined,
     source: path.dirname(skillDir),
   };

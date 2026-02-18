@@ -33,13 +33,18 @@ import { loadSkills } from './skills/index.js';
 import { McpClient, createMcpTools } from './mcp/index.js';
 import type { SkillDef } from './skills/types.js';
 import type { ToolContext } from './tools/types.js';
+import { setColorsEnabled, dim, bold, green, cyan, boldYellow, boldCyan, boldRed, boldGreen } from './cli/colors.js';
 
 const log = createLogger('cli');
 
-function parseArgs(argv: string[]): { prompt?: string; sessionId?: string } {
+// Shared readline instance — set by runRepl, used by cliApproval
+let replRl: readline.Interface | null = null;
+
+function parseArgs(argv: string[]): { prompt?: string; sessionId?: string; noColor?: boolean } {
   const args = argv.slice(2);
   let prompt: string | undefined;
   let sessionId: string | undefined;
+  let noColor: boolean | undefined;
 
   for (let i = 0; i < args.length; i++) {
     if ((args[i] === '-p' || args[i] === '--prompt') && i + 1 < args.length) {
@@ -48,27 +53,42 @@ function parseArgs(argv: string[]): { prompt?: string; sessionId?: string } {
     } else if ((args[i] === '-s' || args[i] === '--session') && i + 1 < args.length) {
       sessionId = args[i + 1];
       i++;
+    } else if (args[i] === '--no-color') {
+      noColor = true;
     }
   }
 
-  return { prompt, sessionId };
+  return { prompt, sessionId, noColor };
 }
 
 function cliApproval(toolName: string, args: Record<string, unknown>): Promise<boolean> {
   return new Promise((resolve) => {
     const argSummary = args.command ? ` "${args.command}"` : args.path ? ` "${args.path}"` : '';
-    process.stdout.write(`\n[approval] Allow ${toolName}${argSummary}? (y/N) `);
-    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-    rl.once('line', (answer: string) => {
-      rl.close();
-      resolve(answer.trim().toLowerCase() === 'y');
-    });
+    process.stdout.write(boldYellow(`\n[approval] Allow ${toolName}${argSummary}? (y/N) `));
+
+    if (replRl) {
+      // Reuse the REPL's readline — no competing listeners
+      replRl.once('line', (answer: string) => {
+        resolve(answer.trim().toLowerCase() === 'y');
+      });
+    } else {
+      // Fallback for non-REPL contexts (shouldn't happen, but safe)
+      const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+      rl.once('line', (answer: string) => {
+        rl.close();
+        resolve(answer.trim().toLowerCase() === 'y');
+      });
+    }
   });
 }
 
 async function main() {
   const cliArgs = parseArgs(process.argv);
   const headless = cliArgs.prompt !== undefined;
+
+  if (cliArgs.noColor || process.env.NO_COLOR !== undefined || !process.stdout.isTTY) {
+    setColorsEnabled(false);
+  }
 
   const config = loadConfig();
   const configDir = getConfigDir();
@@ -93,6 +113,7 @@ async function main() {
     config.security.forbiddenPaths,
     config.security.allowedPaths,
     rateLimiter,
+    config.security.allowSubshells,
   );
   const policyEngine = new PolicyEngine(config.policy, configDir);
   const approvalManager = new ApprovalManager(
@@ -191,6 +212,17 @@ async function main() {
         return { proceed: true, args };
       }
 
+      // Auto-approve if SecurityPolicy already validates the call
+      if (toolName === 'exec' && typeof args.command === 'string') {
+        if (policy.isCommandAllowed(args.command)) {
+          return { proceed: true, args };
+        }
+      } else if (['read_file', 'write_file', 'edit_file', 'list_dir', 'search'].includes(toolName) && typeof args.path === 'string') {
+        if (policy.isPathAllowed(args.path)) {
+          return { proceed: true, args };
+        }
+      }
+
       if (headless) {
         // No interactive approval in headless mode — deny
         return { proceed: false, args };
@@ -210,16 +242,15 @@ async function main() {
   const agentId = 'default';
   const agentConfig = config.agents[agentId];
   if (!agentConfig) {
-    console.error('No default agent configured');
+    console.error(boldRed('No default agent configured'));
     process.exit(1);
   }
 
   const provider = createProvider(agentConfig.provider);
   const model = agentConfig.model ?? provider.defaultModel;
 
-  // Build context
-  const ctx: ToolContext = {
-    signal: AbortSignal.timeout(600_000),
+  // Build base context (signal added per-turn)
+  const baseCtx: Omit<ToolContext, 'signal'> = {
     policy,
     policyEngine,
     approvalManager,
@@ -231,15 +262,19 @@ async function main() {
     providerFactory: createProvider,
   };
 
+  function makeCtx(): ToolContext {
+    return { ...baseCtx, signal: AbortSignal.timeout(600_000) };
+  }
+
   // Build system prompt
   const systemPrompt = buildSystemPrompt(agentConfig, config, toolRegistry, undefined, skills);
 
   const sessionsDir = path.join(configDir, 'sessions');
 
   if (headless) {
-    await runHeadless(cliArgs.prompt!, cliArgs.sessionId, systemPrompt, sessionsDir, agentId, provider, model, toolRegistry, hooks, agentConfig, ctx, skills, mcpClients);
+    await runHeadless(cliArgs.prompt!, cliArgs.sessionId, systemPrompt, sessionsDir, agentId, provider, model, toolRegistry, hooks, agentConfig, makeCtx, skills, mcpClients);
   } else {
-    await runRepl(systemPrompt, sessionsDir, agentId, provider, model, toolRegistry, hooks, agentConfig, ctx, skills, mcpClients, inlineAllowStore, path.resolve(config.workspace.path));
+    await runRepl(systemPrompt, sessionsDir, agentId, provider, model, toolRegistry, hooks, agentConfig, makeCtx, skills, mcpClients, inlineAllowStore, path.resolve(config.workspace.path));
   }
 }
 
@@ -254,7 +289,7 @@ async function runHeadless(
   toolRegistry: ToolRegistryImpl,
   hooks: ToolHookRegistryImpl,
   agentConfig: { maxIterations?: number; maxTotalTokens?: number },
-  ctx: ToolContext,
+  makeCtx: () => ToolContext,
   skills: SkillDef[],
   mcpClients: McpClient[],
 ): Promise<void> {
@@ -276,7 +311,7 @@ async function runHeadless(
     const result = await runAgentLoop(
       { provider, model, tools: toolRegistry, hooks, maxIterations: agentConfig.maxIterations ?? 25, maxTotalTokens: agentConfig.maxTotalTokens },
       messages,
-      ctx,
+      makeCtx(),
     );
 
     // Print just the response
@@ -307,7 +342,7 @@ async function runRepl(
   toolRegistry: ToolRegistryImpl,
   hooks: ToolHookRegistryImpl,
   agentConfig: { name: string; maxIterations?: number; maxTotalTokens?: number; provider: string },
-  ctx: ToolContext,
+  makeCtx: () => ToolContext,
   skills: SkillDef[],
   mcpClients: McpClient[],
   inlineAllowStore: InlineAllowStore,
@@ -327,14 +362,38 @@ async function runRepl(
 
   // REPL
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  replRl = rl;
 
-  console.log('\nBearClaw CLI');
-  console.log(`Agent: ${agentConfig.name} (${agentConfig.provider}/${model})`);
-  console.log(`Workspace: ${workspacePath}`);
+  console.log(boldCyan('\nBearClaw CLI'));
+  console.log(cyan(`Agent: ${agentConfig.name} (${agentConfig.provider}/${model})`));
+  console.log(cyan(`Workspace: ${workspacePath}`));
+
+  // Show session context
+  const nonSystemMessages = messages.filter(m => m.role !== 'system');
+  if (nonSystemMessages.length > 0) {
+    console.log(cyan(`Resuming session (${nonSystemMessages.length} messages). /new to start fresh.`));
+    const lastUser = [...messages].reverse().find(m => m.role === 'user');
+    const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant');
+    if (lastUser) {
+      const userPreview = lastUser.content.length > 120
+        ? lastUser.content.slice(0, 120) + '...'
+        : lastUser.content;
+      console.log(dim(`  You: ${userPreview}`));
+    }
+    if (lastAssistant) {
+      const assistantPreview = lastAssistant.content.length > 120
+        ? lastAssistant.content.slice(0, 120) + '...'
+        : lastAssistant.content;
+      console.log(dim(`  Agent: ${assistantPreview}`));
+    }
+  } else {
+    console.log('New session.');
+  }
+
   console.log('Type /help for commands.\n');
 
   const prompt = () => {
-    rl.question('> ', async (input: string) => {
+    rl.question(boldGreen('> '), async (input: string) => {
       const trimmed = input.trim();
       if (!trimmed) return prompt();
 
@@ -359,16 +418,16 @@ async function runRepl(
 
       if (trimmed === '/help') {
         const lines = [
-          'Commands:',
-          '  /new     — Clear conversation and start fresh',
-          '  /exit    — Save session and exit',
-          '  /help    — Show this help',
+          bold('Commands:'),
+          `  ${bold('/new')}     — Clear conversation and start fresh`,
+          `  ${bold('/exit')}    — Save session and exit`,
+          `  ${bold('/help')}    — Show this help`,
         ];
         if (skills.length > 0) {
           lines.push('');
-          lines.push('Skills:');
+          lines.push(bold('Skills:'));
           for (const s of skills) {
-            lines.push(`  /${s.name}  — ${s.description}`);
+            lines.push(`  ${bold('/' + s.name)}  — ${s.description}`);
           }
         }
         console.log(lines.join('\n') + '\n');
@@ -386,7 +445,7 @@ async function runRepl(
           // Inject skill instructions into context
           messages.push({ role: 'user', content: `[Skill: ${skill.name}]\n\n${skill.instructions}` });
           messages.push({ role: 'assistant', content: `Skill "${skill.name}" activated. I'll follow these instructions for the rest of this conversation.` });
-          console.log(`Skill "${skill.name}" activated.\n`);
+          console.log(green(`Skill "${skill.name}" activated.\n`));
 
           if (cmdArgs) {
             // If args provided, run them immediately as the next user message
@@ -396,18 +455,18 @@ async function runRepl(
               const result = await runAgentLoop(
                 { provider, model, tools: toolRegistry, hooks, maxIterations: agentConfig.maxIterations ?? 25, maxTotalTokens: agentConfig.maxTotalTokens, options: { onToken: (t: string) => process.stdout.write(t) } },
                 messages,
-                ctx,
+                makeCtx(),
               );
 
               process.stdout.write('\n\n');
               for (const tu of result.toolsUsed) {
                 if (tu.result.forUser) {
-                  console.log(`[${tu.name}] ${tu.result.forUser.slice(0, 200)}`);
+                  console.log(green(`[${tu.name}] ${tu.result.forUser.slice(0, 200)}`));
                 }
               }
               messages.push({ role: 'assistant', content: result.content });
             } catch (err) {
-              console.error(`\nError: ${(err as Error).message}`);
+              console.error(boldRed(`\nError: ${(err as Error).message}`));
             }
           }
 
@@ -424,7 +483,7 @@ async function runRepl(
         const result = await runAgentLoop(
           { provider, model, tools: toolRegistry, hooks, maxIterations: agentConfig.maxIterations ?? 25, maxTotalTokens: agentConfig.maxTotalTokens, options: { onToken: (t: string) => process.stdout.write(t) } },
           messages,
-          ctx as ToolContext,
+          makeCtx(),
         );
 
         process.stdout.write('\n\n');
@@ -432,13 +491,13 @@ async function runRepl(
         // Show tool results to user
         for (const tu of result.toolsUsed) {
           if (tu.result.forUser) {
-            console.log(`[${tu.name}] ${tu.result.forUser.slice(0, 200)}`);
+            console.log(green(`[${tu.name}] ${tu.result.forUser.slice(0, 200)}`));
           }
         }
 
         messages.push({ role: 'assistant', content: result.content });
       } catch (err) {
-        console.error(`\nError: ${(err as Error).message}`);
+        console.error(boldRed(`\nError: ${(err as Error).message}`));
       }
 
       prompt();

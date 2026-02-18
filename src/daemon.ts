@@ -69,6 +69,7 @@ async function main() {
     config.security.forbiddenPaths,
     config.security.allowedPaths,
     rateLimiter,
+    config.security.allowSubshells,
   );
   const policyEngine = new PolicyEngine(config.policy, configDir);
   const approvalManager = new ApprovalManager(

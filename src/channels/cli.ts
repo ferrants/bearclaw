@@ -3,6 +3,7 @@ import type { Channel } from './types.js';
 import type { MessageBus } from '../bus/bus.js';
 import type { OutboundMessage } from '../bus/types.js';
 import { createLogger } from '../logging.js';
+import { bold, boldCyan, boldGreen } from '../cli/colors.js';
 
 const log = createLogger('cli-channel');
 
@@ -28,12 +29,12 @@ export class CliChannel implements Channel {
       output: process.stdout,
     });
 
-    process.stdout.write('\nBearClaw CLI\nType /help for commands.\n\n> ');
+    process.stdout.write(boldCyan('\nBearClaw CLI') + '\nType /help for commands.\n\n' + boldGreen('> '));
 
     this.rl.on('line', (line: string) => {
       const input = line.trim();
       if (!input) {
-        process.stdout.write('> ');
+        process.stdout.write(boldGreen('> '));
         return;
       }
 
@@ -44,17 +45,17 @@ export class CliChannel implements Channel {
 
       if (input === '/new') {
         this.onClearSession?.('cli');
-        process.stdout.write('Conversation cleared.\n\n> ');
+        process.stdout.write('Conversation cleared.\n\n' + boldGreen('> '));
         return;
       }
 
       if (input === '/help' || input === 'help' || input === '?') {
         process.stdout.write(
-          'Commands:\n' +
-          '  /new     — Clear conversation and start fresh\n' +
-          '  /exit    — Exit BearClaw\n' +
-          '  /help    — Show this help\n' +
-          '  (anything else is sent as a message)\n\n> '
+          bold('Commands:') + '\n' +
+          `  ${bold('/new')}     — Clear conversation and start fresh\n` +
+          `  ${bold('/exit')}    — Exit BearClaw\n` +
+          `  ${bold('/help')}    — Show this help\n` +
+          '  (anything else is sent as a message)\n\n' + boldGreen('> ')
         );
         return;
       }
@@ -80,6 +81,6 @@ export class CliChannel implements Channel {
 
   async send(msg: OutboundMessage): Promise<void> {
     const prefix = msg.agentId ? `[${msg.agentId}] ` : '';
-    process.stdout.write(`\n${prefix}${msg.content}\n\n> `);
+    process.stdout.write(`\n${prefix}${msg.content}\n\n${boldGreen('> ')}`);
   }
 }
