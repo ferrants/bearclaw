@@ -1,0 +1,200 @@
+src/config/docs.ts
+  a523d1b99137ea4e 134-140
+  8e802f8a1c08f6c5 1-133,141-305
+tests/security/pairing.test.ts
+  a523d1b99137ea4e 1-155
+docs/websocket-api.md
+  a523d1b99137ea4e 15-32
+  65c76845c78f19eb 74-75,226-246,341-344
+  45d620e11e80c5b3 1-14,33-73,76-225,247-340,345-350
+src/agent/loop.ts
+  45d620e11e80c5b3 3,16-18,34-36,54-60,63,96-101,109-113,115-120,131-135
+src/gateway/server.ts
+  45d620e11e80c5b3 4-6,18,23-24,32-38,50-56,69,103-106,188-207
+docs/getting-started.md
+  65c76845c78f19eb 84-85,90
+src/config/manager.ts
+  8e802f8a1c08f6c5 1-74
+src/tools/builtin/config-explain.ts
+  8e802f8a1c08f6c5 1-47
+tests/config/manager.test.ts
+  8e802f8a1c08f6c5 1-94
+tests/gateway/websocket.test.ts
+  45d620e11e80c5b3 1-139
+tests/gateway/mentionables.test.ts
+  45d620e11e80c5b3 1-72
+src/commands/slash.ts
+  65c76845c78f19eb 1-40
+docs/configuration.md
+  a523d1b99137ea4e 32-33,256,263-266,271-273
+docs/security.md
+  a523d1b99137ea4e 243,279,281,283-287
+src/tools/builtin/config-get.ts
+  8e802f8a1c08f6c5 1-65
+src/cli/token-cmd.ts
+  a523d1b99137ea4e 1-71
+src/gateway/approval-bridge.ts
+  45d620e11e80c5b3 1-95
+tests/tools/config-tools.test.ts
+  8e802f8a1c08f6c5 1-156
+src/events.ts
+  45d620e11e80c5b3 11-15
+src/config/config.ts
+  a523d1b99137ea4e 57,150-158
+src/bus/types.ts
+  45d620e11e80c5b3 8
+src/gateway/websocket.ts
+  45d620e11e80c5b3 1-179
+src/gateway/ws-protocol.ts
+  45d620e11e80c5b3 1-87,95-109,111-118
+  65c76845c78f19eb 88-94,110
+src/daemon.ts
+  45d620e11e80c5b3 48-50,206-239,286-292,294-298,300-301,326,433-437,538-540,550-556,624
+  a523d1b99137ea4e 96-107
+  8e802f8a1c08f6c5 30-33,155-164
+  65c76845c78f19eb 18,52-54,332-432,484,522-526
+src/index.ts
+  8e802f8a1c08f6c5 29-32,186-210,452,483,501,503,514
+  65c76845c78f19eb 40-41,447,467-482,484-496,500,502,504-505,507-509,513,516-522,524,530,533,535-537
+  a523d1b99137ea4e 43,93-98
+src/tools/types.ts
+  8e802f8a1c08f6c5 40-41
+tests/tools/registry-hidden.test.ts
+  8e802f8a1c08f6c5 1-80
+src/gateway/mentionables.ts
+  45d620e11e80c5b3 1-59
+src/tools/builtin/config-set.ts
+  8e802f8a1c08f6c5 1-86
+src/gateway/ws-handler.ts
+  45d620e11e80c5b3 1-235
+src/security/pairing.ts
+  a523d1b99137ea4e 111-154
+src/commands/handlers.ts
+  65c76845c78f19eb 1-67
+src/config/schema.ts
+  45d620e11e80c5b3 34
+  a523d1b99137ea4e 35
+tests/commands/slash.test.ts
+  65c76845c78f19eb 1-123
+docs/gateway.md
+  a523d1b99137ea4e 3,16-19,33,103,105,107-109,132-178,180-181,185,188-190
+CLAUDE.md
+  dd010df318137085 52-55
+  6f099aeba50faed7 1-51,60-67
+  19677d2e031d59b5 56-59
+src/tools/registry.ts
+  8e802f8a1c08f6c5 10,16-26,60-61
+tests/gateway/approval-bridge.test.ts
+  45d620e11e80c5b3 1-96
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.4",
+  "base_commit_sha": "1c6dd280456b7175779efe53acbd5342cc3d0bdb",
+  "prompts": {
+    "19677d2e031d59b5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1e334eff-fa46-44d9-b559-016d3efdf8ec",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Matt Ferrante <matt@heyferrante.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 4,
+      "overriden_lines": 0
+    },
+    "45d620e11e80c5b3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "74f973a3-60d9-48ed-87c4-5fe539677ae2",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Matt Ferrante <matt@heyferrante.com>",
+      "messages": [],
+      "total_additions": 1452,
+      "total_deletions": 5,
+      "accepted_lines": 1450,
+      "overriden_lines": 0
+    },
+    "65c76845c78f19eb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2288f756-1ed1-4cb5-adf6-df38eadda8ba",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Matt Ferrante <matt@heyferrante.com>",
+      "messages": [],
+      "total_additions": 450,
+      "total_deletions": 88,
+      "accepted_lines": 434,
+      "overriden_lines": 0
+    },
+    "6f099aeba50faed7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e94ffe64-db99-4bdf-b503-966d1ecb02ca",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Matt Ferrante <matt@heyferrante.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 59,
+      "overriden_lines": 0
+    },
+    "77a6e51741e15c81": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e8bdbeb6-ffd8-4e84-8273-67cac2262c64",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Matt Ferrante <matt@heyferrante.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 638,
+      "overriden_lines": 0
+    },
+    "8e802f8a1c08f6c5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "09fa016e-9097-4eb0-b6ba-ac8f5a1fa562",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Matt Ferrante <matt@heyferrante.com>",
+      "messages": [],
+      "total_additions": 1015,
+      "total_deletions": 5,
+      "accepted_lines": 970,
+      "overriden_lines": 1
+    },
+    "a523d1b99137ea4e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "25b05dbc-c6fc-4385-8a36-c00b20b1beba",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Matt Ferrante <matt@heyferrante.com>",
+      "messages": [],
+      "total_additions": 410,
+      "total_deletions": 19,
+      "accepted_lines": 410,
+      "overriden_lines": 0
+    },
+    "dd010df318137085": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "346a21bb-0a5e-45ad-a4ec-441807807cfd",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Matt Ferrante <matt@heyferrante.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 4,
+      "overriden_lines": 0
+    }
+  }
+}
