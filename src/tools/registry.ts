@@ -7,9 +7,23 @@ const log = createLogger('tool-registry');
 
 export class ToolRegistryImpl {
   private tools = new Map<string, Tool>();
+  private hiddenTools = new Set<string>();
 
   register(tool: Tool): void {
     this.tools.set(tool.name, tool);
+  }
+
+  registerHidden(tool: Tool): void {
+    this.tools.set(tool.name, tool);
+    this.hiddenTools.add(tool.name);
+  }
+
+  setHidden(name: string, hidden: boolean): void {
+    if (hidden) {
+      this.hiddenTools.add(name);
+    } else {
+      this.hiddenTools.delete(name);
+    }
   }
 
   get(name: string): Tool | undefined {
@@ -42,10 +56,12 @@ export class ToolRegistryImpl {
   }
 
   toProviderDefs(): Array<{ name: string; description: string; parameters: Record<string, unknown> }> {
-    return [...this.tools.values()].map(t => ({
-      name: t.name,
-      description: t.description,
-      parameters: t.parameters,
-    }));
+    return [...this.tools.values()]
+      .filter(t => !this.hiddenTools.has(t.name))
+      .map(t => ({
+        name: t.name,
+        description: t.description,
+        parameters: t.parameters,
+      }));
   }
 }

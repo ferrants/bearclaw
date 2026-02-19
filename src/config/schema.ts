@@ -31,6 +31,8 @@ export interface BearClawConfig {
     timeout: number;
     requirePairing: boolean;
     allowPublicBind: boolean;
+    approvalMode?: 'auto-approve' | 'auto-deny' | 'wait';
+    apiKeys?: Array<{ label: string; key: string }>;
   };
   providers: {
     anthropic?: {

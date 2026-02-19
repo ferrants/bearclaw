@@ -37,6 +37,8 @@ export function userResult(content: string): ToolResult {
 // Forward reference types to avoid circular deps
 export interface ToolRegistry {
   register(tool: Tool): void;
+  registerHidden(tool: Tool): void;
+  setHidden(name: string, hidden: boolean): void;
   get(name: string): Tool | undefined;
   list(): string[];
   execute(ctx: ToolContext, name: string, args: Record<string, unknown>): Promise<ToolResult>;

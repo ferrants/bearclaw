@@ -26,6 +26,10 @@ import { searchTool } from './tools/builtin/search.js';
 import { execTool } from './tools/builtin/exec.js';
 import { webFetchTool } from './tools/builtin/web-fetch.js';
 import { spawnTool, setAgentLoopFn } from './tools/builtin/spawn.js';
+import { configExplainTool } from './tools/builtin/config-explain.js';
+import { createConfigGetTool } from './tools/builtin/config-get.js';
+import { createConfigSetTool } from './tools/builtin/config-set.js';
+import { ConfigManager } from './config/manager.js';
 import { runAgentLoop } from './agent/loop.js';
 import { buildSystemPrompt } from './agent/context.js';
 import { loadSession, saveSession, clearSession } from './agent/session.js';
@@ -33,7 +37,10 @@ import { loadSkills } from './skills/index.js';
 import { McpClient, createMcpTools } from './mcp/index.js';
 import type { SkillDef } from './skills/types.js';
 import type { ToolContext } from './tools/types.js';
+import { parseSlashCommand } from './commands/slash.js';
+import { handleConfig, handleNew, handleSkill } from './commands/handlers.js';
 import { setColorsEnabled, dim, bold, green, cyan, boldYellow, boldCyan, boldRed, boldGreen } from './cli/colors.js';
+import { runTokenCommand } from './cli/token-cmd.js';
 
 const log = createLogger('cli');
 
@@ -83,6 +90,12 @@ function cliApproval(toolName: string, args: Record<string, unknown>): Promise<b
 }
 
 async function main() {
+  // Dispatch subcommands before entering REPL
+  if (process.argv[2] === 'token') {
+    await runTokenCommand(process.argv.slice(3));
+    return;
+  }
+
   const cliArgs = parseArgs(process.argv);
   const headless = cliArgs.prompt !== undefined;
 
@@ -169,6 +182,31 @@ async function main() {
 
   // Wire up spawn tool
   setAgentLoopFn(runAgentLoop);
+
+  // Config tools (hidden until /config is invoked)
+  const configManager = new ConfigManager(config);
+  toolRegistry.registerHidden(configExplainTool);
+  toolRegistry.registerHidden(createConfigGetTool(configManager));
+  toolRegistry.registerHidden(createConfigSetTool(configManager, () => cliApproval('config_set', {})));
+
+  // Reload security objects when config changes
+  configManager.onReload((newConfig) => {
+    const newRateLimiter = new ScopedRateLimiter(newConfig.security.rateLimits);
+    const newPolicy = new SecurityPolicy(
+      newConfig.security.autonomy,
+      path.resolve(newConfig.workspace.path),
+      newConfig.security.workspaceOnly,
+      newConfig.security.allowedCommands,
+      newConfig.security.restrictedCommands,
+      newConfig.security.forbiddenPaths,
+      newConfig.security.allowedPaths,
+      newRateLimiter,
+      newConfig.security.allowSubshells,
+    );
+    const newPolicyEngine = new PolicyEngine(newConfig.policy, configDir);
+    baseCtx.policy = newPolicy;
+    baseCtx.policyEngine = newPolicyEngine;
+  });
 
   // Load skills (workspace takes precedence over user-level)
   const skills = loadSkills(path.resolve(config.workspace.path), configDir);
@@ -406,20 +444,12 @@ async function runRepl(
         process.exit(0);
       }
 
-      if (trimmed === '/new') {
-        clearSession(sessionsDir, agentId, 'cli', 'repl');
-        messages.length = 0;
-        if (systemPrompt) {
-          messages.push({ role: 'system', content: systemPrompt });
-        }
-        console.log('Conversation cleared.\n');
-        return prompt();
-      }
-
+      // CLI-only commands
       if (trimmed === '/help') {
         const lines = [
           bold('Commands:'),
           `  ${bold('/new')}     — Clear conversation and start fresh`,
+          `  ${bold('/config')}  — Enter configuration mode`,
           `  ${bold('/exit')}    — Save session and exit`,
           `  ${bold('/help')}    — Show this help`,
         ];
@@ -434,42 +464,80 @@ async function runRepl(
         return prompt();
       }
 
-      // Check for skill slash command (e.g. /tmux or /tmux list sessions)
-      if (trimmed.startsWith('/')) {
-        const spaceIdx = trimmed.indexOf(' ');
-        const cmdName = spaceIdx === -1 ? trimmed.slice(1) : trimmed.slice(1, spaceIdx);
-        const cmdArgs = spaceIdx === -1 ? '' : trimmed.slice(spaceIdx + 1).trim();
-        const skill = skills.find(s => s.name === cmdName);
+      // Shared slash commands
+      const slashCmd = parseSlashCommand(trimmed, skills);
+      if (slashCmd) {
+        if (slashCmd.type === 'new') {
+          const result = handleNew();
+          clearSession(sessionsDir, agentId, 'cli', 'repl');
+          messages.length = 0;
+          if (systemPrompt) {
+            messages.push({ role: 'system', content: systemPrompt });
+          }
+          toolRegistry.setHidden('config_explain', true);
+          toolRegistry.setHidden('config_get', true);
+          toolRegistry.setHidden('config_set', true);
+          console.log((result.action === 'immediate' ? result.response : 'Session cleared.') + '\n');
+          return prompt();
+        }
 
-        if (skill) {
-          // Inject skill instructions into context
-          messages.push({ role: 'user', content: `[Skill: ${skill.name}]\n\n${skill.instructions}` });
-          messages.push({ role: 'assistant', content: `Skill "${skill.name}" activated. I'll follow these instructions for the rest of this conversation.` });
-          console.log(green(`Skill "${skill.name}" activated.\n`));
+        if (slashCmd.type === 'config') {
+          toolRegistry.setHidden('config_explain', false);
+          toolRegistry.setHidden('config_get', false);
+          toolRegistry.setHidden('config_set', false);
 
-          if (cmdArgs) {
-            // If args provided, run them immediately as the next user message
-            messages.push({ role: 'user', content: cmdArgs });
+          const result = handleConfig(slashCmd.args);
+          if (result.action === 'inject') {
+            messages.push(...result.messages);
+            console.log(green('Configuration mode activated.\n'));
 
-            try {
-              const result = await runAgentLoop(
-                { provider, model, tools: toolRegistry, hooks, maxIterations: agentConfig.maxIterations ?? 25, maxTotalTokens: agentConfig.maxTotalTokens, options: { onToken: (t: string) => process.stdout.write(t) } },
-                messages,
-                makeCtx(),
-              );
-
-              process.stdout.write('\n\n');
-              for (const tu of result.toolsUsed) {
-                if (tu.result.forUser) {
-                  console.log(green(`[${tu.name}] ${tu.result.forUser.slice(0, 200)}`));
+            if (slashCmd.args) {
+              try {
+                const agentResult = await runAgentLoop(
+                  { provider, model, tools: toolRegistry, hooks, maxIterations: agentConfig.maxIterations ?? 25, maxTotalTokens: agentConfig.maxTotalTokens, options: { onToken: (t: string) => process.stdout.write(t) } },
+                  messages,
+                  makeCtx(),
+                );
+                process.stdout.write('\n\n');
+                for (const tu of agentResult.toolsUsed) {
+                  if (tu.result.forUser) {
+                    console.log(green(`[${tu.name}] ${tu.result.forUser.slice(0, 200)}`));
+                  }
                 }
+                messages.push({ role: 'assistant', content: agentResult.content });
+              } catch (err) {
+                console.error(boldRed(`\nError: ${(err as Error).message}`));
               }
-              messages.push({ role: 'assistant', content: result.content });
-            } catch (err) {
-              console.error(boldRed(`\nError: ${(err as Error).message}`));
             }
           }
+          return prompt();
+        }
 
+        if (slashCmd.type === 'skill') {
+          const result = handleSkill(slashCmd.skill, slashCmd.args);
+          if (result.action === 'inject') {
+            messages.push(...result.messages);
+            console.log(green(`Skill "${slashCmd.name}" activated.\n`));
+
+            if (slashCmd.args) {
+              try {
+                const agentResult = await runAgentLoop(
+                  { provider, model, tools: toolRegistry, hooks, maxIterations: agentConfig.maxIterations ?? 25, maxTotalTokens: agentConfig.maxTotalTokens, options: { onToken: (t: string) => process.stdout.write(t) } },
+                  messages,
+                  makeCtx(),
+                );
+                process.stdout.write('\n\n');
+                for (const tu of agentResult.toolsUsed) {
+                  if (tu.result.forUser) {
+                    console.log(green(`[${tu.name}] ${tu.result.forUser.slice(0, 200)}`));
+                  }
+                }
+                messages.push({ role: 'assistant', content: agentResult.content });
+              } catch (err) {
+                console.error(boldRed(`\nError: ${(err as Error).message}`));
+              }
+            }
+          }
           return prompt();
         }
       }

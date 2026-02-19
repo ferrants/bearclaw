@@ -5,6 +5,7 @@ export interface InboundMessage {
   messageId: string;
   message: string;
   conversationId?: string;
+  agentId?: string;
   files?: string[];
   timestamp: number;
 }

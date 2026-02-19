@@ -8,6 +8,11 @@ export interface EventMap {
   'conversation:created': { id: string; channel: string };
   'conversation:completed': { id: string; pending: number };
   'conversation:timeout': { id: string; elapsed: number };
+  'tool:pending': { agentId: string; chatId: string; toolCallId: string; toolName: string; args: Record<string, unknown> };
+  'tool:started': { agentId: string; chatId: string; toolCallId: string; toolName: string; args: Record<string, unknown> };
+  'tool:completed': { agentId: string; chatId: string; toolCallId: string; toolName: string; args: Record<string, unknown>; isError: boolean; durationMs: number };
+  'token:received': { agentId: string; chatId: string; token: string };
+  'agent:response': { agentId: string; chatId: string; content: string; iterations: number; toolsUsed: string[] };
 }
 
 type EventHandler<T> = (data: T) => void;

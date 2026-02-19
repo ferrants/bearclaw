@@ -1,6 +1,9 @@
 import * as http from 'node:http';
 import type { MessageBus } from '../bus/bus.js';
 import type { PairingGuard } from '../security/pairing.js';
+import type { WsHandler } from './ws-handler.js';
+import type { MentionablesProvider } from './mentionables.js';
+import type { ApprovalMode } from './approval-bridge.js';
 import { createLogger } from '../logging.js';
 
 const log = createLogger('gateway');
@@ -12,16 +15,27 @@ export interface GatewayConfig {
   timeout: number;
   requirePairing: boolean;
   allowPublicBind: boolean;
+  approvalMode?: ApprovalMode;
 }
 
 export class GatewayServer {
   private server: http.Server | null = null;
+  private wsHandler: WsHandler | null = null;
+  private mentionables: MentionablesProvider | null = null;
 
   constructor(
     private config: GatewayConfig,
     private bus: MessageBus,
     private pairing: PairingGuard,
   ) {}
+
+  setWsHandler(handler: WsHandler): void {
+    this.wsHandler = handler;
+  }
+
+  setMentionables(provider: MentionablesProvider): void {
+    this.mentionables = provider;
+  }
 
   async start(): Promise<void> {
     if (!this.config.allowPublicBind && this.config.host !== '127.0.0.1' && this.config.host !== 'localhost') {
@@ -32,6 +46,13 @@ export class GatewayServer {
     this.server = http.createServer((req, res) => {
       this.handleRequest(req, res);
     });
+
+    if (this.wsHandler) {
+      const handler = this.wsHandler;
+      this.server.on('upgrade', (req, socket, head) => {
+        handler.handleUpgrade(req, socket, head);
+      });
+    }
 
     this.server.setTimeout(this.config.timeout);
 
@@ -45,6 +66,7 @@ export class GatewayServer {
   }
 
   async stop(): Promise<void> {
+    this.wsHandler?.close();
     return new Promise((resolve) => {
       if (this.server) {
         this.server.close(() => {
@@ -76,6 +98,10 @@ export class GatewayServer {
 
       if (method === 'POST' && url.pathname === '/message') {
         return await this.handleMessage(req, res);
+      }
+
+      if (method === 'GET' && url.pathname === '/mentionables') {
+        return this.handleMentionables(req, res, url);
       }
 
       this.sendJson(res, 404, { error: 'Not found' });
@@ -157,6 +183,26 @@ export class GatewayServer {
     });
 
     this.sendJson(res, 200, { status: 'queued' });
+  }
+
+  private handleMentionables(req: http.IncomingMessage, res: http.ServerResponse, url: URL): void {
+    if (this.config.requirePairing) {
+      const auth = req.headers.authorization;
+      if (!auth?.startsWith('Bearer ')) {
+        return this.sendJson(res, 401, { error: 'Bearer token required' });
+      }
+      if (!this.pairing.verifyToken(auth.slice(7))) {
+        return this.sendJson(res, 401, { error: 'Invalid token' });
+      }
+    }
+
+    if (!this.mentionables) {
+      return this.sendJson(res, 503, { error: 'Mentionables not available' });
+    }
+
+    const filter = url.searchParams.get('filter') ?? undefined;
+    const items = this.mentionables.query(filter);
+    this.sendJson(res, 200, { items });
   }
 
   private readBody(req: http.IncomingMessage): Promise<string> {

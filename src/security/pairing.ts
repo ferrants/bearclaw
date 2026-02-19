@@ -108,6 +108,50 @@ export class PairingGuard {
     return this.tokens.has(tokenHash);
   }
 
+  createToken(label: string): string {
+    const token = randomBytes(32).toString('hex');
+    const tokenHash = createHash('sha256').update(token).digest().toString('hex');
+
+    this.tokens.set(tokenHash, {
+      tokenHash,
+      createdAt: new Date().toISOString(),
+      label,
+    });
+
+    this.saveTokens();
+    return token;
+  }
+
+  addStaticKey(label: string, plaintextKey: string): void {
+    const tokenHash = createHash('sha256').update(plaintextKey).digest().toString('hex');
+    this.tokens.set(tokenHash, {
+      tokenHash,
+      createdAt: new Date().toISOString(),
+      label: `[static] ${label}`,
+    });
+  }
+
+  listTokens(): Array<{ label: string; createdAt: string }> {
+    return [...this.tokens.values()].map(entry => ({
+      label: entry.label ?? '(unnamed)',
+      createdAt: entry.createdAt,
+    }));
+  }
+
+  revokeByLabel(label: string): boolean {
+    let found = false;
+    for (const [hash, entry] of this.tokens) {
+      if (entry.label === label) {
+        this.tokens.delete(hash);
+        found = true;
+      }
+    }
+    if (found) {
+      this.saveTokens();
+    }
+    return found;
+  }
+
   private loadTokens(): void {
     try {
       const raw = fs.readFileSync(this.tokensPath, 'utf8');

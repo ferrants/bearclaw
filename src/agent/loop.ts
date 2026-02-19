@@ -1,5 +1,6 @@
 import type { LLMProvider, Message } from '../providers/types.js';
 import type { ToolContext, ToolResult, ToolRegistry, ToolHookRegistry } from '../tools/types.js';
+import type { EventBus } from '../events.js';
 import { errorResult } from '../tools/types.js';
 import { createLogger } from '../logging.js';
 
@@ -12,6 +13,9 @@ export interface AgentLoopConfig {
   hooks: ToolHookRegistry;
   maxIterations: number;
   maxTotalTokens?: number;
+  eventBus?: EventBus;
+  agentId?: string;
+  chatId?: string;
   options?: { maxTokens?: number; temperature?: number; onToken?: (token: string) => void };
 }
 
@@ -27,7 +31,9 @@ export async function runAgentLoop(
   messages: Message[],
   ctx: ToolContext,
 ): Promise<AgentLoopResult> {
-  const { provider, model, tools, hooks, maxIterations, maxTotalTokens, options } = config;
+  const { provider, model, tools, hooks, maxIterations, maxTotalTokens, eventBus, options } = config;
+  const evAgentId = config.agentId ?? ctx.currentAgentConfig.name;
+  const evChatId = config.chatId ?? ctx.chatId ?? '';
   let iteration = 0;
   let totalTokens = 0;
   const toolsUsed: Array<{ name: string; result: ToolResult }> = [];
@@ -45,8 +51,16 @@ export async function runAgentLoop(
     const agentId = ctx.currentAgentConfig.name;
     log.info('LLM call', { agentId, iteration, model, messageCount: messages.length });
 
+    const onToken = eventBus
+      ? (token: string) => {
+          eventBus.emit('token:received', { agentId: evAgentId, chatId: evChatId, token });
+          options?.onToken?.(token);
+        }
+      : options?.onToken;
+
     const response = await provider.chat(messages, toolDefs, model, {
       ...options,
+      onToken,
       signal: ctx.signal,
     });
 
@@ -79,6 +93,12 @@ export async function runAgentLoop(
         const argSummary = summarizeArgs(tc.name, tc.arguments);
         log.info('Tool executing', { agentId, tool: tc.name, ...argSummary });
 
+        // Emit tool:pending before the before-hook
+        eventBus?.emit('tool:pending', {
+          agentId: evAgentId, chatId: evChatId,
+          toolCallId: tc.id, toolName: tc.name, args: tc.arguments,
+        });
+
         // Before hook (blocking)
         const hookResult = await hooks.runBefore(tc.name, tc.arguments, ctx);
 
@@ -86,7 +106,18 @@ export async function runAgentLoop(
         if (!hookResult.proceed) {
           result = errorResult(`Tool call blocked by policy: ${tc.name}`);
           log.warn('Tool blocked', { agentId, tool: tc.name });
+          eventBus?.emit('tool:completed', {
+            agentId: evAgentId, chatId: evChatId,
+            toolCallId: tc.id, toolName: tc.name, args: tc.arguments,
+            isError: true, durationMs: 0,
+          });
         } else {
+          // Emit tool:started after hook passes
+          eventBus?.emit('tool:started', {
+            agentId: evAgentId, chatId: evChatId,
+            toolCallId: tc.id, toolName: tc.name, args: hookResult.args,
+          });
+
           const start = Date.now();
           result = await tools.execute(ctx, tc.name, hookResult.args);
           const durationMs = Date.now() - start;
@@ -96,6 +127,12 @@ export async function runAgentLoop(
             durationMs,
             isError: result.isError,
             resultLength: result.forLLM.length,
+          });
+
+          eventBus?.emit('tool:completed', {
+            agentId: evAgentId, chatId: evChatId,
+            toolCallId: tc.id, toolName: tc.name, args: hookResult.args,
+            isError: result.isError, durationMs,
           });
         }
 

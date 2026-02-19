@@ -54,6 +54,7 @@ export function defaultConfig(): BearClawConfig {
       timeout: 30000,
       requirePairing: true,
       allowPublicBind: false,
+      apiKeys: [],
     },
     providers: {},
     channels: {
@@ -144,6 +145,15 @@ export function encryptConfigSecrets(config: BearClawConfig, encrypt: (plaintext
   if (config.channels.telegram?.botToken && !isEncrypted(config.channels.telegram.botToken)) {
     config.channels.telegram.botToken = encrypt(config.channels.telegram.botToken);
     changed = true;
+  }
+
+  if (config.gateway.apiKeys) {
+    for (const entry of config.gateway.apiKeys) {
+      if (entry.key && !isEncrypted(entry.key)) {
+        entry.key = encrypt(entry.key);
+        changed = true;
+      }
+    }
   }
 
   if (changed) {

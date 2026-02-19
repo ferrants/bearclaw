@@ -29,7 +29,8 @@ BearClaw uses a single `config.json` file located at `~/.bearclaw/config.json` (
     "bodyLimit": 65536,
     "timeout": 30000,
     "requirePairing": true,
-    "allowPublicBind": false
+    "allowPublicBind": false,
+    "apiKeys": []
   },
   "providers": {},
   "channels": {
@@ -252,19 +253,24 @@ See [Channels](channels.md) for details.
 
 ## Gateway
 
-```json
+```jsonc
 {
   "gateway": {
     "enabled": true,
     "host": "127.0.0.1",
     "port": 3000,
     "requirePairing": true,
-    "allowPublicBind": false
+    "allowPublicBind": false,
+    "apiKeys": [
+      { "label": "web-ui", "key": "your-secret-key" }
+    ]
   }
 }
 ```
 
-See [Gateway](gateway.md) for pairing flow and endpoints.
+The `apiKeys` array lets you pre-provision bearer tokens for automated clients and web UIs without interactive pairing. Keys are encrypted at rest on first startup. You can also manage tokens via the CLI: `bearclaw token create/list/revoke`.
+
+See [Gateway](gateway.md) for authentication methods and endpoints.
 
 ## Policy
 

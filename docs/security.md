@@ -240,6 +240,7 @@ API keys and bot tokens are encrypted at rest using ChaCha20-Poly1305 AEAD via `
 - `providers.anthropic.apiKey`
 - `providers.openai.apiKey`
 - `channels.telegram.botToken`
+- `gateway.apiKeys[].key` (static API keys)
 
 ### Manual Handling
 
@@ -275,12 +276,12 @@ The guard resolves hostnames to IP addresses and checks the resolved IP, prevent
 
 The policy engine's `web.blockedCidrs` config allows blocking additional CIDR ranges beyond the defaults.
 
-## Pairing Authentication
+## Gateway Authentication
 
-The gateway uses a pairing flow for authentication (see [Gateway](gateway.md)):
+The gateway supports three authentication methods, all verified through the same token mechanism (see [Gateway](gateway.md)):
 
-1. **Code generation** — 6-digit CSPRNG codes with rejection sampling (no modulo bias)
-2. **Verification** — SHA-256 hashed codes compared with `timingSafeEqual` (constant-time)
-3. **Token issuance** — Random bearer tokens for subsequent requests
-4. **Lockout** — After 5 failed attempts, 5-minute lockout
-5. **Persistence** — Paired tokens encrypted via SecretStore and saved to `~/.bearclaw/paired-tokens.json`
+1. **Interactive pairing** — 6-digit CSPRNG codes with rejection sampling, constant-time comparison, and lockout after 5 failed attempts
+2. **Static API keys** — Pre-provisioned in `gateway.apiKeys[]` config, encrypted at rest, loaded into memory at startup
+3. **CLI tokens** — Created via `bearclaw token create`, stored encrypted in `~/.bearclaw/paired-tokens.json`
+
+All three methods produce SHA-256 hashed tokens stored in the same in-memory map. The `verifyToken()` path is identical regardless of how the token was created — no gateway or WebSocket code changes needed.

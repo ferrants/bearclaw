@@ -81,9 +81,13 @@ Type your message and press Enter. The agent will respond, using tools as needed
 |---|---|
 | `/help` | Show commands and available skills |
 | `/new` | Clear conversation and start fresh |
+| `/config` | Enter configuration mode (exposes config tools) |
+| `/config query` | Enter config mode and immediately run a query |
 | `/exit` | Save session and exit |
 | `/{skill-name}` | Activate a skill (see [Skills](skills.md)) |
 | `/{skill-name} task` | Activate a skill and run a task immediately |
+
+These commands also work over the [WebSocket API](websocket-api.md) — the daemon intercepts them before routing to the agent. `/help` and `/exit` are CLI-only.
 
 ### Headless Mode
 

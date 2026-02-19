@@ -15,7 +15,7 @@ import { AnthropicProvider } from './providers/anthropic.js';
 import { OpenAIProvider } from './providers/openai.js';
 import { OllamaProvider } from './providers/ollama.js';
 import { CliDelegationProvider } from './providers/cli-delegation.js';
-import type { LLMProvider } from './providers/types.js';
+import type { LLMProvider, Message } from './providers/types.js';
 import { ToolRegistryImpl } from './tools/registry.js';
 import { ToolHookRegistryImpl } from './tools/hooks.js';
 import { readFileTool } from './tools/builtin/read-file.js';
@@ -27,6 +27,10 @@ import { execTool } from './tools/builtin/exec.js';
 import { webFetchTool } from './tools/builtin/web-fetch.js';
 import { spawnTool, setAgentLoopFn } from './tools/builtin/spawn.js';
 import { messageTool, setPublishOutbound } from './tools/builtin/message.js';
+import { configExplainTool } from './tools/builtin/config-explain.js';
+import { createConfigGetTool } from './tools/builtin/config-get.js';
+import { createConfigSetTool } from './tools/builtin/config-set.js';
+import { ConfigManager } from './config/manager.js';
 import { runAgentLoop } from './agent/loop.js';
 import { buildSystemPrompt } from './agent/context.js';
 import { loadSession, saveSession, clearSession } from './agent/session.js';
@@ -41,7 +45,13 @@ import { routeMessage } from './orchestrator/router.js';
 import { parseMentions, validateMentions } from './orchestrator/mentions.js';
 import { resolveTeam } from './orchestrator/team.js';
 import { GatewayServer } from './gateway/server.js';
+import { WsHandler } from './gateway/ws-handler.js';
+import { ApprovalBridge } from './gateway/approval-bridge.js';
+import { MentionablesProvider } from './gateway/mentionables.js';
 import { Scheduler } from './scheduler/index.js';
+import { parseSlashCommand } from './commands/slash.js';
+import { handleConfig, handleNew, handleSkill } from './commands/handlers.js';
+import type { ServerMessage_CommandResult } from './gateway/ws-protocol.js';
 
 const log = createLogger('daemon');
 
@@ -82,6 +92,18 @@ async function main() {
     config.policy.inlineAllow.dayScopeHours,
   );
   const pairing = new PairingGuard(configDir, secrets);
+
+  // Load static API keys into pairing guard
+  if (config.gateway.apiKeys) {
+    for (const entry of config.gateway.apiKeys) {
+      if (entry.key) {
+        pairing.addStaticKey(entry.label, secrets.decrypt(entry.key));
+      }
+    }
+    if (config.gateway.apiKeys.length > 0) {
+      log.info('Loaded static API keys', { count: config.gateway.apiKeys.length });
+    }
+  }
 
   // 3. Event bus
   const eventBus = new EventBus();
@@ -130,6 +152,16 @@ async function main() {
   // Wire spawn and message
   setAgentLoopFn(runAgentLoop);
 
+  // Config tools (hidden until explicitly activated)
+  const configManager = new ConfigManager(config);
+  toolRegistry.registerHidden(configExplainTool);
+  toolRegistry.registerHidden(createConfigGetTool(configManager));
+  toolRegistry.registerHidden(createConfigSetTool(configManager, async () => {
+    // Daemon mode: deny security config changes by default (no interactive approval)
+    log.warn('Config set denied: security field change requires interactive approval');
+    return false;
+  }));
+
   // 5b. Load skills (workspace takes precedence over user-level)
   const skills = loadSkills(path.resolve(config.workspace.path), configDir);
 
@@ -171,7 +203,40 @@ async function main() {
       if (inlineAllowStore.isAllowed(toolName)) {
         return { proceed: true, args };
       }
-      // Otherwise need manual approval (for now, auto-approve in daemon mode)
+
+      // WebSocket approval flow
+      if (wsHandler) {
+        const approvalMode = config.gateway.approvalMode ?? 'auto-approve';
+
+        if (wsHandler.hasClients() || approvalMode === 'wait') {
+          const { requestId, decision: approvalDecision } = approvalBridge.requestApproval({
+            toolName,
+            args,
+            agentId: ctx.currentAgentConfig.name,
+            chatId: ctx.chatId ?? '',
+            hasClients: wsHandler.hasClients(),
+          });
+
+          wsHandler.broadcast({
+            type: 'approval_needed',
+            requestId,
+            toolName,
+            args,
+            agentId: ctx.currentAgentConfig.name,
+            chatId: ctx.chatId ?? '',
+          });
+
+          const approved = await approvalDecision;
+          return { proceed: approved, args };
+        }
+
+        // No clients connected — fallback based on mode
+        if (approvalMode === 'auto-deny') {
+          return { proceed: false, args };
+        }
+        // auto-approve: fall through
+      }
+
       policyEngine.suggestRule({
         toolName,
         scope,
@@ -218,9 +283,22 @@ async function main() {
   const conversationTracker = new ConversationTracker();
   conversationTracker.start();
 
-  // 10. Gateway
+  // 10. Gateway + WebSocket
+  const approvalBridge = new ApprovalBridge();
+  const mentionablesProvider = new MentionablesProvider(
+    config.agents, config.teams, skills, toolRegistry,
+  );
+
+  let wsHandler: WsHandler | null = null;
   if (config.gateway.enabled) {
+    wsHandler = new WsHandler(
+      bus, pairing, config.gateway.requirePairing,
+      eventBus, approvalBridge, mentionablesProvider,
+    );
+
     const gateway = new GatewayServer(config.gateway, bus, pairing);
+    gateway.setWsHandler(wsHandler);
+    gateway.setMentionables(mentionablesProvider);
     await gateway.start();
   }
 
@@ -245,11 +323,118 @@ async function main() {
         break;
       }
 
-      const { channel, sender, chatId, message } = inbound;
+      const { channel, sender, chatId, message, agentId: requestedAgent } = inbound;
       log.info('Inbound message', { channel, sender, chatId, length: message.length });
 
       // Parse inline allows
       const cleaned = inlineAllowStore.parseAndStore(message);
+
+      // Intercept slash commands
+      const slashCmd = parseSlashCommand(cleaned, skills);
+      if (slashCmd) {
+        if (slashCmd.type === 'new') {
+          const result = handleNew();
+          clearAllAgentSessions(channel, chatId);
+          // Re-hide config tools
+          toolRegistry.setHidden('config_explain', true);
+          toolRegistry.setHidden('config_get', true);
+          toolRegistry.setHidden('config_set', true);
+          const response = result.action === 'immediate' ? result.response : '';
+          bus.publishOutbound({ channel, chatId, content: response });
+          if (wsHandler) {
+            const cmdResult: ServerMessage_CommandResult = {
+              type: 'command_result', chatId, command: 'new', message: response,
+            };
+            wsHandler.broadcast(cmdResult);
+          }
+          continue;
+        }
+
+        if (slashCmd.type === 'config') {
+          // Unhide config tools globally
+          toolRegistry.setHidden('config_explain', false);
+          toolRegistry.setHidden('config_get', false);
+          toolRegistry.setHidden('config_set', false);
+
+          const result = handleConfig(slashCmd.args);
+          if (result.action === 'inject') {
+            if (wsHandler) {
+              const cmdResult: ServerMessage_CommandResult = {
+                type: 'command_result', chatId, command: 'config',
+                message: 'Configuration mode activated.',
+              };
+              wsHandler.broadcast(cmdResult);
+            }
+
+            if (slashCmd.args) {
+              // Has args — inject setup messages then process args via agent
+              const targetAgent = requestedAgent && config.agents[requestedAgent]
+                ? requestedAgent : routeMessage(slashCmd.args, config.agents, config.teams).agentId!;
+              processAgentMessage(targetAgent, slashCmd.args, channel, chatId, sender, undefined, result.messages);
+            } else {
+              // Activation only — save injected messages to session, publish confirmation
+              const defaultAgent = Object.keys(config.agents)[0];
+              const agentId = requestedAgent ?? defaultAgent;
+              const messages = loadSession(sessionsDir, agentId, channel, chatId);
+              const systemPrompt = buildSystemPrompt(config.agents[agentId], config, toolRegistry, undefined, skills);
+              if (systemPrompt) {
+                if (messages.length > 0 && messages[0].role === 'system') {
+                  messages[0].content = systemPrompt;
+                } else {
+                  messages.unshift({ role: 'system', content: systemPrompt });
+                }
+              }
+              messages.push(...result.messages);
+              saveSession(sessionsDir, agentId, channel, chatId, messages);
+              bus.publishOutbound({ channel, chatId, content: result.agentMessage ?? 'Configuration mode activated.' });
+            }
+          }
+          continue;
+        }
+
+        if (slashCmd.type === 'skill') {
+          const result = handleSkill(slashCmd.skill, slashCmd.args);
+          if (result.action === 'inject') {
+            if (wsHandler) {
+              const cmdResult: ServerMessage_CommandResult = {
+                type: 'command_result', chatId, command: slashCmd.name,
+                message: `Skill "${slashCmd.name}" activated.`,
+              };
+              wsHandler.broadcast(cmdResult);
+            }
+
+            if (slashCmd.args) {
+              // Has args — inject setup messages then process args via agent
+              const targetAgent = requestedAgent && config.agents[requestedAgent]
+                ? requestedAgent : routeMessage(slashCmd.args, config.agents, config.teams).agentId!;
+              processAgentMessage(targetAgent, slashCmd.args, channel, chatId, sender, undefined, result.messages);
+            } else {
+              // Activation only — save injected messages to session
+              const defaultAgent = Object.keys(config.agents)[0];
+              const agentId = requestedAgent ?? defaultAgent;
+              const messages = loadSession(sessionsDir, agentId, channel, chatId);
+              const systemPrompt = buildSystemPrompt(config.agents[agentId], config, toolRegistry, undefined, skills);
+              if (systemPrompt) {
+                if (messages.length > 0 && messages[0].role === 'system') {
+                  messages[0].content = systemPrompt;
+                } else {
+                  messages.unshift({ role: 'system', content: systemPrompt });
+                }
+              }
+              messages.push(...result.messages);
+              saveSession(sessionsDir, agentId, channel, chatId, messages);
+              bus.publishOutbound({ channel, chatId, content: result.agentMessage ?? `Skill "${slashCmd.name}" activated.` });
+            }
+          }
+          continue;
+        }
+      }
+
+      // If a specific agent was requested (e.g. from WebSocket), route directly
+      if (requestedAgent && config.agents[requestedAgent]) {
+        processAgentMessage(requestedAgent, cleaned, channel, chatId, sender);
+        continue;
+      }
 
       // Route message
       const route = routeMessage(cleaned, config.agents, config.teams);
@@ -296,6 +481,7 @@ async function main() {
     chatId: string,
     sender: string,
     conversationId?: string,
+    prefixMessages?: Message[],
   ) {
     const agentConfig = config.agents[agentId];
     if (!agentConfig) {
@@ -333,6 +519,11 @@ async function main() {
       }
     }
 
+    // Inject prefix messages (e.g. from slash commands) before user message
+    if (prefixMessages) {
+      messages.push(...prefixMessages);
+    }
+
     messages.push({ role: 'user', content: message });
 
     try {
@@ -344,6 +535,9 @@ async function main() {
           hooks,
           maxIterations: agentConfig.maxIterations ?? 25,
           maxTotalTokens: agentConfig.maxTotalTokens,
+          eventBus,
+          agentId,
+          chatId,
         },
         messages,
         ctx,
@@ -353,6 +547,13 @@ async function main() {
       saveSession(sessionsDir, agentId, channel, chatId, messages);
       log.info('Agent responded', { agentId, channel, iterations: result.iterations, toolCalls: result.toolsUsed.length });
 
+      eventBus.emit('agent:response', {
+        agentId,
+        chatId,
+        content: result.content,
+        iterations: result.iterations,
+        toolsUsed: result.toolsUsed.map(t => t.name),
+      });
       eventBus.emit('agent:stopped', { agentId, reason: 'completed' });
 
       // Parse mentions for multi-agent handoff
@@ -420,6 +621,7 @@ async function main() {
   const shutdown = async () => {
     log.info('Shutting down...');
     abortController.abort();
+    wsHandler?.close();
     conversationTracker.stop();
     await hooks.flush();
     for (const client of mcpClients) {
