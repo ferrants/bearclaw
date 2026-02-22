@@ -60,12 +60,47 @@ The rest of the file is markdown instructions that the agent reads when the skil
 
 ## Multi-Source Loading
 
-Skills are loaded from multiple directories with precedence. Earlier directories take priority — if the same skill name appears in both, the first one wins:
+Skills are loaded from multiple directories with precedence. Earlier directories take priority — if the same skill name appears in multiple locations, the first one wins.
+
+### Default precedence (no `skillsDirs` configured)
 
 1. **Workspace skills** (`{workspace}/skills/`) — highest precedence
 2. **User-level skills** (`~/.bearclaw/skills/`) — lower precedence
 
-This lets you override shared skills with workspace-specific versions.
+### Agent directory mode
+
+When using an agent directory (`bearclaw.jsonc`), the default search order is:
+
+1. **Agent workspace** (`{workspace}/skills/`)
+2. **Agent directory** (`{agentDir}/skills/`)
+3. **Instance config** (`~/.bearclaw/skills/`)
+
+### Custom skills directories
+
+You can add extra directories via the `skillsDirs` field in `bearclaw.jsonc`. These are searched **before** the default locations, giving them highest precedence:
+
+```jsonc
+{
+  "name": "my-agent",
+  "provider": "openai",
+  // ...
+  "skillsDirs": [
+    ".agents/skills",            // relative to agent dir
+    "/home/user/shared-skills"   // absolute path
+  ]
+}
+```
+
+Each entry should point to a directory that directly contains skill subdirectories (each with a `SKILL.md`). Relative paths are resolved from the agent directory.
+
+With `skillsDirs` configured, the full precedence becomes:
+
+1. **`skillsDirs` entries** (in order) — highest precedence
+2. **Agent workspace** (`{workspace}/skills/`)
+3. **Agent directory** (`{agentDir}/skills/`)
+4. **Instance config** (`~/.bearclaw/skills/`)
+
+This lets you override shared skills with workspace-specific versions, or share a single skills directory across multiple agents.
 
 ## Slash Commands
 

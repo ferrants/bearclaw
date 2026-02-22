@@ -102,8 +102,11 @@ describe('buildSystemPrompt', () => {
     const registry = new ToolRegistryImpl();
 
     const prompt = buildSystemPrompt(agent, config, registry);
-    expect(prompt).toContain('## Memory: tasks.md');
+    expect(prompt).toContain('## Memory');
+    expect(prompt).toContain('### tasks.md');
     expect(prompt).toContain('- Fix the bug');
+    expect(prompt).toContain('Memory directory:');
+    expect(prompt).toContain('Use absolute paths when reading/writing memory files.');
   });
 
   it('wraps tools section with ## Tools heading', () => {

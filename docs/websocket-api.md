@@ -81,7 +81,8 @@ Sent in response to an `approval_needed` event from the server.
 {
   "type": "approval_response",
   "requestId": "apr_1234567890_1",
-  "approved": true
+  "approved": true,
+  "allow": "session"
 }
 ```
 
@@ -89,6 +90,7 @@ Sent in response to an `approval_needed` event from the server.
 |-------|----------|-------------|
 | `requestId` | yes | The `requestId` from the `approval_needed` message |
 | `approved` | yes | `true` to allow the tool to execute, `false` to block it |
+| `allow` | no | Durability scope for this approval. When set and `approved` is `true`, future calls to the same tool auto-approve without prompting. Values: `once` (default, just this call), `session` (rest of this daemon process), `day` (for `dayScopeHours` from config) |
 
 ### `query_mentionables` — Get autocomplete items
 
@@ -106,6 +108,46 @@ Returns available agents, teams, skills, and tools for autocomplete/mentions.
 |-------|----------|-------------|
 | `id` | yes | Client-generated request ID (returned in response) |
 | `filter` | no | Case-insensitive substring filter on name/description |
+
+### `list_chats` — List existing chat sessions
+
+Returns all stored chat sessions across all agents.
+
+```json
+{
+  "type": "list_chats",
+  "id": "q_1",
+  "channel": "websocket",
+  "agentId": "default"
+}
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `id` | yes | Client-generated request ID (returned in response) |
+| `channel` | no | Filter by channel (`cli`, `websocket`, `telegram`, `scheduler`, `gateway`) |
+| `agentId` | no | Filter by agent ID |
+
+### `get_chat_history` — Load chat history
+
+Returns the message history for a specific chat session. System messages are excluded.
+
+```json
+{
+  "type": "get_chat_history",
+  "id": "q_1",
+  "chatId": "session-1",
+  "agentId": "default",
+  "channel": "websocket"
+}
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `id` | yes | Client-generated request ID (returned in response) |
+| `chatId` | yes | The chat/session ID to load history for |
+| `agentId` | no | Agent ID. Defaults to `default` |
+| `channel` | no | Channel name. Defaults to `websocket` |
 
 ## Server → Client Messages
 
@@ -244,6 +286,66 @@ Emitted when the daemon handles a slash command (`/config`, `/new`, `/{skill-nam
 
 For `/config <args>` and `/{skill} <args>`, you'll receive both a `command_result` (confirming activation) and the normal `agent_response` flow for the args.
 
+### `schedule_triggered` — Scheduled task activated
+
+Emitted when a configured schedule fires, before the agent begins processing. Use this to display context in the UI for why the agent is running (e.g. "Scheduled task: every 6h").
+
+```json
+{
+  "type": "schedule_triggered",
+  "chatId": "schedule_0",
+  "agentId": "bearclaw-agent-1",
+  "message": "Continue active tasks, or pick up the next queued task...",
+  "schedule": "every 6h"
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `chatId` | The schedule's session ID (`schedule_0`, `schedule_1`, etc.) |
+| `agentId` | The agent the schedule targets (or `default` if none specified) |
+| `message` | The message being sent to the agent |
+| `schedule` | The schedule expression (cron or interval, e.g. `every 6h`, `0 9 * * *`) |
+
+This event arrives before any `tool_pending` or `token` events from the resulting agent run. The `chatId` can be used to correlate subsequent tool and response events back to this schedule.
+
+### `chat_list` — Chat session list
+
+Response to `list_chats`.
+
+```json
+{
+  "type": "chat_list",
+  "id": "q_1",
+  "chats": [
+    {
+      "agentId": "default",
+      "channel": "websocket",
+      "chatId": "session-1",
+      "lastModified": 1708531200000,
+      "messageCount": 12
+    }
+  ]
+}
+```
+
+### `chat_history` — Chat message history
+
+Response to `get_chat_history`. System messages are excluded; only user, assistant, and tool messages are returned.
+
+```json
+{
+  "type": "chat_history",
+  "id": "q_1",
+  "chatId": "session-1",
+  "agentId": "default",
+  "messages": [
+    { "role": "user", "content": "What files are here?" },
+    { "role": "assistant", "content": "Here are the files..." }
+  ]
+}
+```
+
 ### `error` — Error
 
 ```json
@@ -285,10 +387,19 @@ When a client connects, the server immediately sends all pending `approval_neede
 
 ## REST Alternative
 
-The mentionables endpoint is also available via REST:
+The mentionables and chat endpoints are also available via REST:
 
 ```bash
+# List mentionables
 curl http://localhost:3000/mentionables?filter=dep \
+  -H 'Authorization: Bearer YOUR_TOKEN'
+
+# List chat sessions (with optional filters)
+curl 'http://localhost:3000/chats?channel=websocket&agentId=default' \
+  -H 'Authorization: Bearer YOUR_TOKEN'
+
+# Get chat history
+curl 'http://localhost:3000/chats/history?chatId=session-1&agentId=default&channel=websocket' \
   -H 'Authorization: Bearer YOUR_TOKEN'
 ```
 
@@ -326,16 +437,21 @@ ws.on('message', (data) => {
 
     case 'approval_needed':
       console.log(`[approval] ${msg.toolName}: ${JSON.stringify(msg.args)}`);
-      // Auto-approve for demo purposes
+      // Auto-approve for the rest of the session
       ws.send(JSON.stringify({
         type: 'approval_response',
         requestId: msg.requestId,
         approved: true,
+        allow: 'session',
       }));
       break;
 
     case 'agent_response':
       console.log(`\n\nFinal response (${msg.iterations} iterations):\n${msg.content}`);
+      break;
+
+    case 'schedule_triggered':
+      console.log(`\n[schedule] ${msg.schedule} → ${msg.agentId}: ${msg.message}`);
       break;
 
     case 'command_result':

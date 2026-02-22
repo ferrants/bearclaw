@@ -11,13 +11,17 @@ export function buildSystemPrompt(
   toolRegistry: ToolRegistryImpl,
   teamContext?: { team: TeamConfig; teammates: string[] },
   skills?: SkillDef[],
+  agentDir?: string,
 ): string {
   const parts: string[] = [];
+
+  // Base directory for resolving relative paths: agent dir if available, otherwise workspace
+  const baseDir = agentDir ?? config.workspace.path;
 
   // 1. Load system prompt files (with headings and truncation)
   if (agentConfig.systemPromptFiles) {
     for (const file of agentConfig.systemPromptFiles) {
-      const filePath = path.resolve(config.workspace.path, file);
+      const filePath = path.resolve(baseDir, file);
       try {
         const raw = fs.readFileSync(filePath, 'utf8');
         const content = truncateFile(raw.trim(), BOOTSTRAP_FILE_MAX_CHARS);
@@ -29,7 +33,17 @@ export function buildSystemPrompt(
     }
   }
 
-  // 2. Tool descriptions summary
+  // 2. Current date/time
+  const now = new Date();
+  const timestamp = now.toLocaleDateString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+  parts.push(`## Current Date\n${timestamp}`);
+
+  // 3. Tool descriptions summary
   const toolNames = toolRegistry.list();
   if (toolNames.length > 0) {
     const defs = toolRegistry.toProviderDefs();
@@ -37,22 +51,26 @@ export function buildSystemPrompt(
     parts.push(`## Tools\nYou have access to the following tools. Use them to accomplish tasks — do not ask the user to run commands manually when you can use a tool directly.\n${toolSummary}`);
   }
 
-  // 3. Memory files (with truncation)
+  // 4. Memory files (with truncation)
   if (config.memory.enabled) {
-    const memDir = path.resolve(config.workspace.path, config.memory.dir);
+    const memDir = path.resolve(baseDir, config.memory.dir);
+    const memoryParts: string[] = [];
+    memoryParts.push(`Memory directory: ${memDir}`);
+    memoryParts.push('Use absolute paths when reading/writing memory files.');
     for (const file of config.memory.alwaysLoad) {
       const filePath = path.join(memDir, file);
       try {
         const raw = fs.readFileSync(filePath, 'utf8');
         const content = truncateFile(raw.trim(), BOOTSTRAP_FILE_MAX_CHARS);
-        parts.push(`## Memory: ${file}\n${content}`);
+        memoryParts.push(`### ${file}\n${content}`);
       } catch {
         // Skip missing memory files
       }
     }
+    parts.push(`## Memory\n${memoryParts.join('\n\n')}`);
   }
 
-  // 4. Skills (exclude those with disableModelInvocation)
+  // 5. Skills (exclude those with disableModelInvocation)
   if (skills && skills.length > 0) {
     const visibleSkills = skills.filter(s => !s.disableModelInvocation);
     if (visibleSkills.length > 0) {
@@ -64,7 +82,7 @@ export function buildSystemPrompt(
     }
   }
 
-  // 5. Team context
+  // 6. Team context
   if (teamContext) {
     parts.push(
       `## Team: ${teamContext.team.name}\n` +
@@ -73,7 +91,7 @@ export function buildSystemPrompt(
     );
   }
 
-  // 6. Enforce total budget
+  // 7. Enforce total budget
   return truncateTotal(parts.join('\n\n'), BOOTSTRAP_TOTAL_MAX_CHARS);
 }
 

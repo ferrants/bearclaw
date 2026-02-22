@@ -16,6 +16,7 @@ Welcome to the BearClaw documentation. BearClaw is an AI agent framework with de
 10. **[Gateway](gateway.md)** — HTTP gateway with pairing authentication
 11. **[Architecture](architecture.md)** — Design decisions, directory structure, data flow
 12. **[API Reference](api-reference.md)** — TypeScript interfaces and types
+13. **[Approval Scoping](approval-scoping.md)** — Durable approval scopes via WebSocket (`session`, `day`)
 
 ## Quick Links
 

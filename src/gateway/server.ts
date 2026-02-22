@@ -1,7 +1,7 @@
 import * as http from 'node:http';
 import type { MessageBus } from '../bus/bus.js';
 import type { PairingGuard } from '../security/pairing.js';
-import type { WsHandler } from './ws-handler.js';
+import type { WsHandler, SessionProvider } from './ws-handler.js';
 import type { MentionablesProvider } from './mentionables.js';
 import type { ApprovalMode } from './approval-bridge.js';
 import { createLogger } from '../logging.js';
@@ -22,6 +22,7 @@ export class GatewayServer {
   private server: http.Server | null = null;
   private wsHandler: WsHandler | null = null;
   private mentionables: MentionablesProvider | null = null;
+  private sessions: SessionProvider | null = null;
 
   constructor(
     private config: GatewayConfig,
@@ -35,6 +36,10 @@ export class GatewayServer {
 
   setMentionables(provider: MentionablesProvider): void {
     this.mentionables = provider;
+  }
+
+  setSessionProvider(provider: SessionProvider): void {
+    this.sessions = provider;
   }
 
   async start(): Promise<void> {
@@ -102,6 +107,14 @@ export class GatewayServer {
 
       if (method === 'GET' && url.pathname === '/mentionables') {
         return this.handleMentionables(req, res, url);
+      }
+
+      if (method === 'GET' && url.pathname === '/chats') {
+        return this.handleListChats(req, res, url);
+      }
+
+      if (method === 'GET' && url.pathname === '/chats/history') {
+        return this.handleChatHistory(req, res, url);
       }
 
       this.sendJson(res, 404, { error: 'Not found' });
@@ -203,6 +216,60 @@ export class GatewayServer {
     const filter = url.searchParams.get('filter') ?? undefined;
     const items = this.mentionables.query(filter);
     this.sendJson(res, 200, { items });
+  }
+
+  private handleListChats(req: http.IncomingMessage, res: http.ServerResponse, url: URL): void {
+    if (this.config.requirePairing) {
+      const auth = req.headers.authorization;
+      if (!auth?.startsWith('Bearer ')) {
+        return this.sendJson(res, 401, { error: 'Bearer token required' });
+      }
+      if (!this.pairing.verifyToken(auth.slice(7))) {
+        return this.sendJson(res, 401, { error: 'Invalid token' });
+      }
+    }
+
+    if (!this.sessions) {
+      return this.sendJson(res, 503, { error: 'Sessions not available' });
+    }
+
+    const filter: { channel?: string; agentId?: string } = {};
+    const channel = url.searchParams.get('channel');
+    const agentId = url.searchParams.get('agentId');
+    if (channel) filter.channel = channel;
+    if (agentId) filter.agentId = agentId;
+
+    const chats = this.sessions.listChats(Object.keys(filter).length > 0 ? filter : undefined);
+    this.sendJson(res, 200, { chats });
+  }
+
+  private handleChatHistory(req: http.IncomingMessage, res: http.ServerResponse, url: URL): void {
+    if (this.config.requirePairing) {
+      const auth = req.headers.authorization;
+      if (!auth?.startsWith('Bearer ')) {
+        return this.sendJson(res, 401, { error: 'Bearer token required' });
+      }
+      if (!this.pairing.verifyToken(auth.slice(7))) {
+        return this.sendJson(res, 401, { error: 'Invalid token' });
+      }
+    }
+
+    if (!this.sessions) {
+      return this.sendJson(res, 503, { error: 'Sessions not available' });
+    }
+
+    const chatId = url.searchParams.get('chatId');
+    if (!chatId) {
+      return this.sendJson(res, 400, { error: 'chatId required' });
+    }
+
+    const agentId = url.searchParams.get('agentId') ?? 'default';
+    const channel = url.searchParams.get('channel') ?? 'websocket';
+    const messages = this.sessions.getChatHistory(agentId, channel, chatId);
+    const filtered = messages
+      .filter(m => m.role !== 'system')
+      .map(m => ({ role: m.role, content: m.content }));
+    this.sendJson(res, 200, { chatId, agentId, messages: filtered });
   }
 
   private readBody(req: http.IncomingMessage): Promise<string> {

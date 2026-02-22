@@ -1,16 +1,40 @@
+import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import type { BearClawConfig } from './schema.js';
-import { saveConfig } from './config.js';
+import { saveConfig, stripJsonc } from './config.js';
 
 export type ConfigReloadListener = (config: BearClawConfig) => void;
+
+/**
+ * Paths that belong to the agent-level config (bearclaw.jsonc).
+ * Everything else is instance-level (~/.bearclaw/config.jsonc).
+ */
+const AGENT_PATH_PREFIXES = [
+  'workspace.',
+  'security.autonomy',
+  'security.workspaceOnly',
+  'security.allowedCommands',
+  'security.allowedPaths',
+  'security.allowSubshells',
+  'security.rateLimits.perAgent',
+  'security.rateLimits.perToolClass',
+  'memory.',
+  'policy.',
+];
+
+function isAgentLevelPath(dottedPath: string): boolean {
+  return AGENT_PATH_PREFIXES.some(prefix => dottedPath === prefix || dottedPath.startsWith(prefix));
+}
 
 export class ConfigManager {
   private config: BearClawConfig;
   private listeners: ConfigReloadListener[] = [];
+  private agentDirPath: string | undefined;
 
-  constructor(config: BearClawConfig) {
+  constructor(config: BearClawConfig, agentDirPath?: string) {
     this.config = config;
+    this.agentDirPath = agentDirPath;
   }
 
   /** Get a value by dotted path (e.g. "security.autonomy"). Returns undefined for missing paths. */
@@ -55,7 +79,12 @@ export class ConfigManager {
       );
     }
 
-    saveConfig(this.config);
+    // Route the write to the correct config file
+    if (this.agentDirPath && isAgentLevelPath(dottedPath)) {
+      this.saveAgentConfig(dottedPath, value);
+    } else {
+      saveConfig(this.config);
+    }
 
     for (const listener of this.listeners) {
       listener(this.config);
@@ -70,5 +99,35 @@ export class ConfigManager {
   /** Get the full config object (read-only reference). */
   getConfig(): BearClawConfig {
     return this.config;
+  }
+
+  /**
+   * Save an agent-level setting to the agent's bearclaw.jsonc.
+   * Maps from resolved BearClawConfig paths to AgentDirConfig paths.
+   */
+  private saveAgentConfig(dottedPath: string, value: unknown): void {
+    const configPath = path.join(this.agentDirPath!, 'bearclaw.jsonc');
+    let agentConfig: Record<string, unknown> = {};
+
+    try {
+      const raw = fs.readFileSync(configPath, 'utf8');
+      agentConfig = JSON.parse(stripJsonc(raw));
+    } catch {
+      // Start with empty config if file doesn't exist
+    }
+
+    // Set the value in the agent config using the same dotted path
+    const parts = dottedPath.split('.');
+    let current: Record<string, unknown> = agentConfig;
+    for (let i = 0; i < parts.length - 1; i++) {
+      const part = parts[i];
+      if (current[part] === undefined || current[part] === null || typeof current[part] !== 'object') {
+        current[part] = {};
+      }
+      current = current[part] as Record<string, unknown>;
+    }
+    current[parts[parts.length - 1]] = value;
+
+    fs.writeFileSync(configPath, JSON.stringify(agentConfig, null, 2));
   }
 }

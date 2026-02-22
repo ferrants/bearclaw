@@ -1,2 +1,2 @@
 export type { SkillDef } from './types.js';
-export { loadSkills } from './loader.js';
+export { loadSkills, loadSkillsMulti } from './loader.js';

@@ -1,4 +1,7 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import * as os from 'node:os';
 import { ConfigManager } from '../../src/config/manager.js';
 import { defaultConfig } from '../../src/config/config.js';
 
@@ -89,6 +92,63 @@ describe('ConfigManager', () => {
       const manager = new ConfigManager(config);
 
       expect(manager.getConfig()).toBe(config);
+    });
+  });
+
+  describe('agent-aware set()', () => {
+    let agentDir: string;
+
+    beforeEach(() => {
+      agentDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bearclaw-mgr-'));
+      fs.writeFileSync(
+        path.join(agentDir, 'bearclaw.jsonc'),
+        JSON.stringify({ name: 'test-agent', provider: 'anthropic' }),
+      );
+    });
+
+    afterEach(() => {
+      fs.rmSync(agentDir, { recursive: true, force: true });
+    });
+
+    it('writes agent-level paths to bearclaw.jsonc', async () => {
+      const config = makeConfig();
+      const manager = new ConfigManager(config, agentDir);
+
+      manager.set('security.autonomy', 'full');
+
+      const agentConfig = JSON.parse(fs.readFileSync(path.join(agentDir, 'bearclaw.jsonc'), 'utf8'));
+      expect(agentConfig.security.autonomy).toBe('full');
+    });
+
+    it('writes instance-level paths to instance config', async () => {
+      const { saveConfig } = vi.mocked(await import('../../src/config/config.js'));
+      saveConfig.mockClear();
+      const config = makeConfig();
+      const manager = new ConfigManager(config, agentDir);
+
+      manager.set('gateway.port', 4000);
+
+      expect(saveConfig).toHaveBeenCalledTimes(1);
+    });
+
+    it('writes memory paths to bearclaw.jsonc', () => {
+      const config = makeConfig();
+      const manager = new ConfigManager(config, agentDir);
+
+      manager.set('memory.enabled', false);
+
+      const agentConfig = JSON.parse(fs.readFileSync(path.join(agentDir, 'bearclaw.jsonc'), 'utf8'));
+      expect(agentConfig.memory.enabled).toBe(false);
+    });
+
+    it('writes policy paths to bearclaw.jsonc', () => {
+      const config = makeConfig();
+      const manager = new ConfigManager(config, agentDir);
+
+      manager.set('policy.defaultAction', 'deny');
+
+      const agentConfig = JSON.parse(fs.readFileSync(path.join(agentDir, 'bearclaw.jsonc'), 'utf8'));
+      expect(agentConfig.policy.defaultAction).toBe('deny');
     });
   });
 });

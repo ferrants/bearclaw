@@ -2,7 +2,7 @@
 
 import * as path from 'node:path';
 import * as readline from 'node:readline';
-import { loadConfig, getConfigDir, encryptConfigSecrets } from './config/config.js';
+import { loadConfig, getConfigDir, encryptConfigSecrets, loadInstanceConfig } from './config/config.js';
 import { setLogLevel, createLogger } from './logging.js';
 import { SecretStore } from './security/secrets.js';
 import { SecurityPolicy } from './security/policy.js';
@@ -41,17 +41,22 @@ import { parseSlashCommand } from './commands/slash.js';
 import { handleConfig, handleNew, handleSkill } from './commands/handlers.js';
 import { setColorsEnabled, dim, bold, green, cyan, boldYellow, boldCyan, boldRed, boldGreen } from './cli/colors.js';
 import { runTokenCommand } from './cli/token-cmd.js';
+import { runInitCommand } from './commands/init.js';
+import { discoverAgentDir, loadAgentDirConfig } from './config/agent-loader.js';
+import { createAgentRuntime } from './config/agent-runtime-factory.js';
+import type { AgentRuntime } from './config/agent-runtime.js';
 
 const log = createLogger('cli');
 
 // Shared readline instance — set by runRepl, used by cliApproval
 let replRl: readline.Interface | null = null;
 
-function parseArgs(argv: string[]): { prompt?: string; sessionId?: string; noColor?: boolean } {
+function parseArgs(argv: string[]): { prompt?: string; sessionId?: string; noColor?: boolean; agentDir?: string } {
   const args = argv.slice(2);
   let prompt: string | undefined;
   let sessionId: string | undefined;
   let noColor: boolean | undefined;
+  let agentDir: string | undefined;
 
   for (let i = 0; i < args.length; i++) {
     if ((args[i] === '-p' || args[i] === '--prompt') && i + 1 < args.length) {
@@ -62,10 +67,13 @@ function parseArgs(argv: string[]): { prompt?: string; sessionId?: string; noCol
       i++;
     } else if (args[i] === '--no-color') {
       noColor = true;
+    } else if ((args[i] === '-a' || args[i] === '--agent') && i + 1 < args.length) {
+      agentDir = args[i + 1];
+      i++;
     }
   }
 
-  return { prompt, sessionId, noColor };
+  return { prompt, sessionId, noColor, agentDir };
 }
 
 function cliApproval(toolName: string, args: Record<string, unknown>): Promise<boolean> {
@@ -95,6 +103,10 @@ async function main() {
     await runTokenCommand(process.argv.slice(3));
     return;
   }
+  if (process.argv[2] === 'init') {
+    runInitCommand(process.argv[3]);
+    return;
+  }
 
   const cliArgs = parseArgs(process.argv);
   const headless = cliArgs.prompt !== undefined;
@@ -103,10 +115,21 @@ async function main() {
     setColorsEnabled(false);
   }
 
-  const config = loadConfig();
   const configDir = getConfigDir();
-  setLogLevel(headless ? 'error' : config.monitoring.logLevel);
 
+  // Agent directory discovery: --agent flag > walk-up from cwd > fallback to legacy config
+  let agentRuntime: AgentRuntime | undefined;
+  let agentDirPath: string | undefined;
+
+  if (cliArgs.agentDir) {
+    agentDirPath = path.resolve(cliArgs.agentDir);
+  } else {
+    agentDirPath = discoverAgentDir(process.cwd()) ?? undefined;
+  }
+
+  // Load instance config + resolve agent
+  const config = loadConfig();
+  setLogLevel(headless ? 'error' : config.monitoring.logLevel);
   log.info('BearClaw CLI starting');
 
   // Initialize secrets and encrypt any plaintext keys
@@ -115,26 +138,41 @@ async function main() {
     encryptConfigSecrets(config, (v) => secrets.encrypt(v), SecretStore.isEncrypted);
   }
 
-  // Initialize security
-  const rateLimiter = new ScopedRateLimiter(config.security.rateLimits);
-  const policy = new SecurityPolicy(
-    config.security.autonomy,
-    path.resolve(config.workspace.path),
-    config.security.workspaceOnly,
-    config.security.allowedCommands,
-    config.security.restrictedCommands,
-    config.security.forbiddenPaths,
-    config.security.allowedPaths,
-    rateLimiter,
-    config.security.allowSubshells,
-  );
-  const policyEngine = new PolicyEngine(config.policy, configDir);
+  if (agentDirPath) {
+    // Agent directory mode: load agent config + merge with instance
+    const instanceConfig = loadInstanceConfig();
+    const agentDirInfo = loadAgentDirConfig(agentDirPath);
+    agentRuntime = await createAgentRuntime({
+      agentDir: agentDirInfo,
+      instanceConfig,
+      configDir,
+    });
+    log.info('Using agent directory', { dir: agentDirPath, name: agentRuntime.name });
+  }
+
+  // Use runtime values or fall back to legacy config
+  const effectiveConfig = agentRuntime?.resolvedConfig ?? config;
+  const policy = agentRuntime?.policy ?? (() => {
+    const rateLimiter = new ScopedRateLimiter(config.security.rateLimits);
+    return new SecurityPolicy(
+      config.security.autonomy,
+      path.resolve(config.workspace.path),
+      config.security.workspaceOnly,
+      config.security.allowedCommands,
+      config.security.restrictedCommands,
+      config.security.forbiddenPaths,
+      config.security.allowedPaths,
+      rateLimiter,
+      config.security.allowSubshells,
+    );
+  })();
+  const policyEngine = agentRuntime?.policyEngine ?? new PolicyEngine(config.policy, configDir);
   const approvalManager = new ApprovalManager(
-    config.policy.approvalScope,
-    config.policy.approvals.defaultTTLSeconds,
-    config.policy.approvals.cache,
+    effectiveConfig.policy.approvalScope,
+    effectiveConfig.policy.approvals.defaultTTLSeconds,
+    effectiveConfig.policy.approvals.cache,
   );
-  const inlineAllowStore = new InlineAllowStore(
+  const inlineAllowStore = agentRuntime?.inlineAllowStore ?? new InlineAllowStore(
     config.policy.inlineAllow.enabled,
     config.policy.inlineAllow.dayScopeHours,
   );
@@ -143,24 +181,24 @@ async function main() {
   function createProvider(name: string): LLMProvider {
     switch (name) {
       case 'anthropic': {
-        const cfg = config.providers.anthropic;
+        const cfg = effectiveConfig.providers.anthropic;
         if (!cfg) throw new Error('Anthropic provider not configured');
         const key = secrets.decrypt(cfg.apiKey);
         return new AnthropicProvider(key, cfg.defaultModel);
       }
       case 'openai': {
-        const cfg = config.providers.openai;
+        const cfg = effectiveConfig.providers.openai;
         if (!cfg) throw new Error('OpenAI provider not configured');
         const key = secrets.decrypt(cfg.apiKey);
         return new OpenAIProvider(key, cfg.defaultModel);
       }
       case 'ollama': {
-        const cfg = config.providers.ollama;
+        const cfg = effectiveConfig.providers.ollama;
         if (!cfg) throw new Error('Ollama provider not configured');
         return new OllamaProvider(cfg.baseUrl, cfg.defaultModel);
       }
       case 'cli-delegation': {
-        const cfg = config.providers.cliDelegation;
+        const cfg = effectiveConfig.providers.cliDelegation;
         if (!cfg) throw new Error('CLI delegation provider not configured');
         return new CliDelegationProvider(cfg);
       }
@@ -184,42 +222,60 @@ async function main() {
   setAgentLoopFn(runAgentLoop);
 
   // Config tools (hidden until /config is invoked)
-  const configManager = new ConfigManager(config);
+  const configManager = new ConfigManager(config, agentRuntime?.dir);
   toolRegistry.registerHidden(configExplainTool);
   toolRegistry.registerHidden(createConfigGetTool(configManager));
   toolRegistry.registerHidden(createConfigSetTool(configManager, () => cliApproval('config_set', {})));
 
-  // Reload security objects when config changes
+  // Reload security objects when config changes (legacy mode only)
   configManager.onReload((newConfig) => {
-    const newRateLimiter = new ScopedRateLimiter(newConfig.security.rateLimits);
-    const newPolicy = new SecurityPolicy(
-      newConfig.security.autonomy,
-      path.resolve(newConfig.workspace.path),
-      newConfig.security.workspaceOnly,
-      newConfig.security.allowedCommands,
-      newConfig.security.restrictedCommands,
-      newConfig.security.forbiddenPaths,
-      newConfig.security.allowedPaths,
-      newRateLimiter,
-      newConfig.security.allowSubshells,
-    );
-    const newPolicyEngine = new PolicyEngine(newConfig.policy, configDir);
-    baseCtx.policy = newPolicy;
-    baseCtx.policyEngine = newPolicyEngine;
+    if (!agentRuntime) {
+      const newRateLimiter = new ScopedRateLimiter(newConfig.security.rateLimits);
+      const newPolicy = new SecurityPolicy(
+        newConfig.security.autonomy,
+        path.resolve(newConfig.workspace.path),
+        newConfig.security.workspaceOnly,
+        newConfig.security.allowedCommands,
+        newConfig.security.restrictedCommands,
+        newConfig.security.forbiddenPaths,
+        newConfig.security.allowedPaths,
+        newRateLimiter,
+        newConfig.security.allowSubshells,
+      );
+      const newPolicyEngine = new PolicyEngine(newConfig.policy, configDir);
+      baseCtx.policy = newPolicy;
+      baseCtx.policyEngine = newPolicyEngine;
+    }
   });
 
-  // Load skills (workspace takes precedence over user-level)
-  const skills = loadSkills(path.resolve(config.workspace.path), configDir);
+  // Load skills
+  const skills = agentRuntime?.skills ?? loadSkills(path.resolve(config.workspace.path), configDir);
 
-  // Start MCP servers
-  const mcpClients: McpClient[] = [];
-  for (const [name, serverConfig] of Object.entries(config.mcp.servers)) {
-    const env = expandMcpEnv(serverConfig.env);
-    const client = new McpClient(serverConfig.command, serverConfig.args ?? [], env);
-    await client.start();
-    mcpClients.push(client);
-    for (const tool of await createMcpTools(name, client)) {
-      toolRegistry.register(tool);
+  // Start MCP servers (instance-level; agent-level already started in createAgentRuntime)
+  const mcpClients: McpClient[] = [...(agentRuntime?.mcpClients ?? [])];
+  if (!agentRuntime) {
+    for (const [name, serverConfig] of Object.entries(config.mcp.servers)) {
+      const env = expandMcpEnv(serverConfig.env);
+      const client = new McpClient(serverConfig.command, serverConfig.args ?? [], env);
+      await client.start();
+      mcpClients.push(client);
+      for (const tool of await createMcpTools(name, client)) {
+        toolRegistry.register(tool);
+      }
+    }
+  }
+  // Instance MCP servers (for agent-dir mode, load instance MCP not already loaded by agent)
+  if (agentRuntime) {
+    const instanceMcpServers = loadInstanceConfig().mcp?.servers ?? {};
+    for (const [name, serverConfig] of Object.entries(instanceMcpServers)) {
+      if (agentRuntime.resolvedConfig.mcp.servers[name]) continue;
+      const env = expandMcpEnv(serverConfig.env);
+      const client = new McpClient(serverConfig.command, serverConfig.args ?? [], env);
+      await client.start();
+      mcpClients.push(client);
+      for (const tool of await createMcpTools(name, client)) {
+        toolRegistry.register(tool);
+      }
     }
   }
 
@@ -276,9 +332,9 @@ async function main() {
     return { proceed: true, args };
   });
 
-  // Resolve default agent
-  const agentId = 'default';
-  const agentConfig = config.agents[agentId];
+  // Resolve agent config
+  const agentId = agentRuntime?.name ?? 'default';
+  const agentConfig = agentRuntime?.primaryAgentConfig ?? config.agents['default'];
   if (!agentConfig) {
     console.error(boldRed('No default agent configured'));
     process.exit(1);
@@ -295,7 +351,7 @@ async function main() {
     inlineAllowStore,
     toolRegistry,
     hooks,
-    agentConfigs: config.agents,
+    agentConfigs: agentRuntime?.agentConfigs ?? config.agents,
     currentAgentConfig: agentConfig,
     providerFactory: createProvider,
   };
@@ -304,15 +360,16 @@ async function main() {
     return { ...baseCtx, signal: AbortSignal.timeout(600_000) };
   }
 
-  // Build system prompt
-  const systemPrompt = buildSystemPrompt(agentConfig, config, toolRegistry, undefined, skills);
+  // Build system prompt (resolve paths relative to agent dir when available)
+  const systemPrompt = buildSystemPrompt(agentConfig, effectiveConfig, toolRegistry, undefined, skills, agentRuntime?.dir);
 
-  const sessionsDir = path.join(configDir, 'sessions');
+  const sessionsDir = agentRuntime?.sessionsDir ?? path.join(configDir, 'sessions');
+  const workspacePath = agentRuntime?.workspacePath ?? path.resolve(config.workspace.path);
 
   if (headless) {
     await runHeadless(cliArgs.prompt!, cliArgs.sessionId, systemPrompt, sessionsDir, agentId, provider, model, toolRegistry, hooks, agentConfig, makeCtx, skills, mcpClients);
   } else {
-    await runRepl(systemPrompt, sessionsDir, agentId, provider, model, toolRegistry, hooks, agentConfig, makeCtx, skills, mcpClients, inlineAllowStore, path.resolve(config.workspace.path));
+    await runRepl(systemPrompt, sessionsDir, agentId, provider, model, toolRegistry, hooks, agentConfig, makeCtx, skills, mcpClients, inlineAllowStore, workspacePath, agentRuntime);
   }
 }
 
@@ -385,6 +442,7 @@ async function runRepl(
   mcpClients: McpClient[],
   inlineAllowStore: InlineAllowStore,
   workspacePath: string,
+  agentRuntimeInfo?: AgentRuntime,
 ): Promise<void> {
   // Load session
   const messages: Message[] = loadSession(sessionsDir, agentId, 'cli', 'repl');
@@ -404,6 +462,9 @@ async function runRepl(
 
   console.log(boldCyan('\nBearClaw CLI'));
   console.log(cyan(`Agent: ${agentConfig.name} (${agentConfig.provider}/${model})`));
+  if (agentRuntimeInfo) {
+    console.log(cyan(`Agent dir: ${agentRuntimeInfo.dir}`));
+  }
   console.log(cyan(`Workspace: ${workspacePath}`));
 
   // Show session context
@@ -445,10 +506,24 @@ async function runRepl(
       }
 
       // CLI-only commands
+      if (trimmed === '/agent') {
+        if (agentRuntimeInfo) {
+          console.log(bold('Current agent:'));
+          console.log(`  Name: ${agentRuntimeInfo.name}`);
+          console.log(`  Dir:  ${agentRuntimeInfo.dir}`);
+          console.log(`  Workspace: ${agentRuntimeInfo.workspacePath}`);
+        } else {
+          console.log(`Agent: ${agentConfig.name} (legacy config mode)`);
+        }
+        console.log('');
+        return prompt();
+      }
+
       if (trimmed === '/help') {
         const lines = [
           bold('Commands:'),
           `  ${bold('/new')}     — Clear conversation and start fresh`,
+          `  ${bold('/agent')}   — Show current agent info`,
           `  ${bold('/config')}  — Enter configuration mode`,
           `  ${bold('/exit')}    — Save session and exit`,
           `  ${bold('/help')}    — Show this help`,

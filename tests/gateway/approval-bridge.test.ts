@@ -61,7 +61,7 @@ describe('ApprovalBridge', () => {
 
   it('should return false for unknown requestId', () => {
     const bridge = new ApprovalBridge();
-    expect(bridge.resolveApproval('nonexistent', true)).toBe(false);
+    expect(bridge.resolveApproval('nonexistent', true)).toBeNull();
   });
 
   it('should deny all on clear', async () => {

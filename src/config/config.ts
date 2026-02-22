@@ -2,6 +2,8 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { type BearClawConfig, AutonomyLevel } from './schema.js';
+import type { InstanceConfig } from './instance-schema.js';
+import { LEGACY_AGENT_FIELDS } from './instance-schema.js';
 import {
   ALLOWED_COMMANDS,
   RESTRICTED_COMMANDS,
@@ -237,7 +239,7 @@ export function stripJsonc(text: string): string {
   return result;
 }
 
-function deepMerge(target: Record<string, unknown>, source: Record<string, unknown>): Record<string, unknown> {
+export function deepMerge(target: Record<string, unknown>, source: Record<string, unknown>): Record<string, unknown> {
   const result = { ...target };
   for (const key of Object.keys(source)) {
     const tVal = target[key];
@@ -253,4 +255,58 @@ function deepMerge(target: Record<string, unknown>, source: Record<string, unkno
     }
   }
   return result;
+}
+
+export function defaultInstanceConfig(): InstanceConfig {
+  return {
+    providers: {},
+    gateway: {
+      enabled: false,
+      host: '127.0.0.1',
+      port: 3000,
+      bodyLimit: 65536,
+      timeout: 30000,
+      requirePairing: true,
+      allowPublicBind: false,
+      apiKeys: [],
+    },
+    channels: {
+      enabled: ['cli'],
+    },
+    security: {
+      encrypt: true,
+      forbiddenPaths: [...FORBIDDEN_PATHS],
+      rateLimits: { global: 20 },
+    },
+    monitoring: {
+      logLevel: 'info',
+      heartbeatInterval: 3600,
+    },
+  };
+}
+
+/**
+ * Load instance-level config from ~/.bearclaw/config.jsonc.
+ * Returns the instance config (infrastructure/credentials only).
+ * Legacy fields are preserved for _default agent synthesis.
+ */
+export function loadInstanceConfig(): InstanceConfig {
+  const defaults = defaultInstanceConfig();
+  const configPath = getConfigPath();
+
+  try {
+    const raw = fs.readFileSync(configPath, 'utf8');
+    const parsed = JSON.parse(stripJsonc(raw));
+    const merged = deepMerge(defaults as unknown as Record<string, unknown>, parsed) as unknown as InstanceConfig;
+
+    // Warn about legacy fields
+    const hasLegacy = LEGACY_AGENT_FIELDS.some(f => f in parsed);
+    if (hasLegacy) {
+      log.warn('Instance config contains agent-level fields. Consider migrating to bearclaw.jsonc per-agent config.');
+    }
+
+    return merged;
+  } catch {
+    return defaults;
+  }
 }

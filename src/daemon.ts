@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import * as path from 'node:path';
-import { loadConfig, getConfigDir, encryptConfigSecrets } from './config/config.js';
+import { loadConfig, getConfigDir, encryptConfigSecrets, loadInstanceConfig } from './config/config.js';
 import { setLogLevel, createLogger } from './logging.js';
 import { EventBus } from './events.js';
 import { SecretStore } from './security/secrets.js';
@@ -33,7 +33,8 @@ import { createConfigSetTool } from './tools/builtin/config-set.js';
 import { ConfigManager } from './config/manager.js';
 import { runAgentLoop } from './agent/loop.js';
 import { buildSystemPrompt } from './agent/context.js';
-import { loadSession, saveSession, clearSession } from './agent/session.js';
+import { loadSession, saveSession, clearSession, listChats } from './agent/session.js';
+import type { SessionProvider } from './gateway/ws-handler.js';
 import { loadSkills } from './skills/index.js';
 import { McpClient, createMcpTools } from './mcp/index.js';
 import { MessageBus } from './bus/bus.js';
@@ -52,6 +53,10 @@ import { Scheduler } from './scheduler/index.js';
 import { parseSlashCommand } from './commands/slash.js';
 import { handleConfig, handleNew, handleSkill } from './commands/handlers.js';
 import type { ServerMessage_CommandResult } from './gateway/ws-protocol.js';
+import { AgentRegistry } from './config/agent-registry.js';
+import { loadAgentDirConfig, buildResolvedConfig } from './config/agent-loader.js';
+import { createAgentRuntime, createDefaultAgentRuntime } from './config/agent-runtime-factory.js';
+import type { AgentRuntime } from './config/agent-runtime.js';
 
 const log = createLogger('daemon');
 
@@ -68,7 +73,38 @@ async function main() {
     encryptConfigSecrets(config, (v) => secrets.encrypt(v), SecretStore.isEncrypted);
   }
 
-  // 2. Initialize security
+  // 2. Build AgentRegistry from CLI args or legacy config
+  const agentRegistry = new AgentRegistry();
+  const instanceConfig = loadInstanceConfig();
+
+  // Parse agent dirs from CLI args (e.g., bearclaw daemon ~/agents/a1 ~/agents/a2)
+  const agentDirArgs = process.argv.slice(2).filter(a => !a.startsWith('-'));
+
+  if (agentDirArgs.length > 0) {
+    // Multi-agent mode: each arg is an agent directory
+    for (const dirArg of agentDirArgs) {
+      const agentDirInfo = loadAgentDirConfig(path.resolve(dirArg));
+      const runtime = await createAgentRuntime({
+        agentDir: agentDirInfo,
+        instanceConfig,
+        configDir,
+      });
+      agentRegistry.register(runtime);
+      log.info('Loaded agent', { name: runtime.name, dir: runtime.dir });
+    }
+  } else {
+    // Legacy mode: create _default runtime from config
+    const defaultRuntime = await createDefaultAgentRuntime(config, configDir);
+    agentRegistry.register(defaultRuntime);
+    // Also register any additional agents from legacy config
+    for (const [id, agentConfig] of Object.entries(config.agents)) {
+      if (id === 'default' || id === '_default') continue;
+      // These are sub-agents within the default runtime, not separate runtimes
+    }
+    log.info('Using legacy config mode');
+  }
+
+  // 3. Shared security (for legacy mode / fallback)
   const rateLimiter = new ScopedRateLimiter(config.security.rateLimits);
   const policy = new SecurityPolicy(
     config.security.autonomy,
@@ -105,10 +141,10 @@ async function main() {
     }
   }
 
-  // 3. Event bus
+  // 4. Event bus
   const eventBus = new EventBus();
 
-  // 4. Providers
+  // 5. Providers
   function createProvider(name: string): LLMProvider {
     switch (name) {
       case 'anthropic': {
@@ -137,7 +173,7 @@ async function main() {
     }
   }
 
-  // 5. Tools
+  // 6. Tools
   const toolRegistry = new ToolRegistryImpl();
   toolRegistry.register(readFileTool);
   toolRegistry.register(writeFileTool);
@@ -153,7 +189,8 @@ async function main() {
   setAgentLoopFn(runAgentLoop);
 
   // Config tools (hidden until explicitly activated)
-  const configManager = new ConfigManager(config);
+  const defaultRuntime = agentRegistry.getDefault();
+  const configManager = new ConfigManager(config, defaultRuntime?.dir);
   toolRegistry.registerHidden(configExplainTool);
   toolRegistry.registerHidden(createConfigGetTool(configManager));
   toolRegistry.registerHidden(createConfigSetTool(configManager, async () => {
@@ -162,10 +199,10 @@ async function main() {
     return false;
   }));
 
-  // 5b. Load skills (workspace takes precedence over user-level)
-  const skills = loadSkills(path.resolve(config.workspace.path), configDir);
+  // 6b. Load skills (aggregate from all runtimes for legacy mode, or per-runtime)
+  const skills = defaultRuntime?.skills ?? loadSkills(path.resolve(config.workspace.path), configDir);
 
-  // 5c. Start MCP servers
+  // 6c. Start instance-level MCP servers
   const mcpClients: McpClient[] = [];
   for (const [name, serverConfig] of Object.entries(config.mcp.servers)) {
     const env = expandMcpEnv(serverConfig.env);
@@ -176,21 +213,34 @@ async function main() {
       toolRegistry.register(tool);
     }
   }
+  // Collect all MCP clients from agent runtimes
+  for (const runtime of agentRegistry.all()) {
+    mcpClients.push(...runtime.mcpClients);
+  }
 
-  // 6. Hooks
+  // Schedule rules map — populated in section 12, referenced by before-hook closure
+  const scheduleRulesByIndex = new Map<number, import('./config/schema.js').ScheduleRule>();
+
+  // 7. Hooks
   const hooks = new ToolHookRegistryImpl();
-  // PolicyEngine as first before-hook
+  // PolicyEngine as first before-hook (uses per-agent policy when available)
   hooks.registerBefore(async (toolName, args, ctx) => {
     const scope = toolName === 'exec' ? 'exec' as const
       : toolName === 'web_fetch' ? 'web' as const
       : toolName === 'message' ? 'message' as const
       : 'tool' as const;
 
-    const decision = policyEngine.evaluate({
+    // Use the per-agent policy engine if available
+    const agentName = ctx.currentAgentConfig.name;
+    const runtime = agentRegistry.get(agentName);
+    const effectivePolicyEngine = runtime?.policyEngine ?? policyEngine;
+    const effectiveInlineAllowStore = runtime?.inlineAllowStore ?? inlineAllowStore;
+
+    const decision = effectivePolicyEngine.evaluate({
       toolName,
       scope,
       command: args.command as string | undefined,
-      agentId: ctx.currentAgentConfig.name,
+      agentId: agentName,
       channel: ctx.channel,
     });
 
@@ -200,8 +250,22 @@ async function main() {
 
     if (decision.action === 'approve') {
       // Check inline allows first
-      if (inlineAllowStore.isAllowed(toolName)) {
+      if (effectiveInlineAllowStore.isAllowed(toolName)) {
         return { proceed: true, args };
+      }
+
+      // Per-schedule approval mode override
+      if (ctx.channel === 'scheduler' && ctx.chatId) {
+        const idxMatch = ctx.chatId.match(/^schedule_(\d+)/);
+        if (idxMatch) {
+          const schedRule = scheduleRulesByIndex.get(Number(idxMatch[1]));
+          if (schedRule?.approvalMode === 'auto-approve') {
+            return { proceed: true, args };
+          }
+          if (schedRule?.approvalMode === 'auto-deny') {
+            return { proceed: false, args };
+          }
+        }
       }
 
       // WebSocket approval flow
@@ -212,7 +276,7 @@ async function main() {
           const { requestId, decision: approvalDecision } = approvalBridge.requestApproval({
             toolName,
             args,
-            agentId: ctx.currentAgentConfig.name,
+            agentId: agentName,
             chatId: ctx.chatId ?? '',
             hasClients: wsHandler.hasClients(),
           });
@@ -222,7 +286,7 @@ async function main() {
             requestId,
             toolName,
             args,
-            agentId: ctx.currentAgentConfig.name,
+            agentId: agentName,
             chatId: ctx.chatId ?? '',
           });
 
@@ -237,28 +301,35 @@ async function main() {
         // auto-approve: fall through
       }
 
-      policyEngine.suggestRule({
+      effectivePolicyEngine.suggestRule({
         toolName,
         scope,
         command: args.command as string | undefined,
-        agentId: ctx.currentAgentConfig.name,
+        agentId: agentName,
       }, 'allow');
     }
 
     return { proceed: true, args };
   });
 
-  // 7. Message bus
+  // 8. Message bus
   const bus = new MessageBus();
   setPublishOutbound((msg) => bus.publishOutbound(msg));
 
-  // 8. Channels
+  // 9. Channels
   const channels: Channel[] = [];
 
   // Clear all agent sessions for a given channel + chatId
   const clearAllAgentSessions = (channelName: string, chatId: string) => {
+    // Clear sessions from all runtimes
+    for (const runtime of agentRegistry.all()) {
+      for (const id of Object.keys(runtime.agentConfigs)) {
+        clearSession(runtime.sessionsDir, id, channelName, chatId);
+      }
+    }
+    // Also clear legacy sessions
     for (const id of Object.keys(config.agents)) {
-      clearSession(sessionsDir, id, channelName, chatId);
+      clearSession(path.join(configDir, 'sessions'), id, channelName, chatId);
     }
     log.info('Sessions cleared', { channel: channelName, chatId });
   };
@@ -279,39 +350,102 @@ async function main() {
     await channel.start(bus);
   }
 
-  // 9. Conversation tracker
+  // 10. Conversation tracker
   const conversationTracker = new ConversationTracker();
   conversationTracker.start();
 
-  // 10. Gateway + WebSocket
+  // 11. Gateway + WebSocket
   const approvalBridge = new ApprovalBridge();
+
+  // Build aggregate agents/teams from all runtimes for mentionables
+  const allAgents: Record<string, import('./config/schema.js').AgentConfig> = {};
+  const allTeams: Record<string, import('./config/schema.js').TeamConfig> = {};
+  for (const runtime of agentRegistry.all()) {
+    // Only expose primary agents (not sub-agents) as mentionables
+    allAgents[runtime.name] = runtime.primaryAgentConfig;
+    Object.assign(allTeams, runtime.teams);
+  }
+
   const mentionablesProvider = new MentionablesProvider(
-    config.agents, config.teams, skills, toolRegistry,
+    allAgents, allTeams, skills, toolRegistry,
   );
+
+  const sessionProvider: SessionProvider = {
+    listChats(filter) {
+      const all: import('./agent/session.js').ChatInfo[] = [];
+      for (const runtime of agentRegistry.all()) {
+        all.push(...listChats(runtime.sessionsDir, filter));
+      }
+      all.push(...listChats(path.join(configDir, 'sessions'), filter));
+      return all.sort((a, b) => b.lastModified - a.lastModified);
+    },
+    getChatHistory(agentId, channel, chatId) {
+      const runtime = agentRegistry.get(agentId);
+      const sessDir = runtime?.sessionsDir ?? path.join(configDir, 'sessions');
+      return loadSession(sessDir, agentId, channel, chatId);
+    },
+  };
 
   let wsHandler: WsHandler | null = null;
   if (config.gateway.enabled) {
     wsHandler = new WsHandler(
       bus, pairing, config.gateway.requirePairing,
       eventBus, approvalBridge, mentionablesProvider,
+      (agentId, toolName, scope) => {
+        const runtime = agentRegistry.get(agentId);
+        const store = runtime?.inlineAllowStore ?? inlineAllowStore;
+        store.addAllow(toolName, scope);
+        log.info('Allow registered from approval', { agentId, toolName, scope });
+      },
     );
+    wsHandler.setSessionProvider(sessionProvider);
 
     const gateway = new GatewayServer(config.gateway, bus, pairing);
     gateway.setWsHandler(wsHandler);
     gateway.setMentionables(mentionablesProvider);
+    gateway.setSessionProvider(sessionProvider);
     await gateway.start();
   }
 
-  // 11. Scheduler
+  // 12. Scheduler (aggregate schedules from all runtimes)
   const abortController = new AbortController();
-  if (config.schedules.length > 0) {
-    const scheduler = new Scheduler(config.schedules, bus, abortController.signal);
+  const allSchedules = agentRegistry.all().flatMap(rt =>
+    rt.schedules.map(s => ({ ...s, agent: s.agent ?? rt.name }))
+  );
+  allSchedules.forEach((rule, i) => scheduleRulesByIndex.set(i, rule));
+
+  if (allSchedules.length > 0) {
+    const scheduler = new Scheduler(allSchedules, bus, eventBus, abortController.signal, (rule, _chatId) => {
+      if (rule.allow && rule.allow.length > 0) {
+        const runtime = agentRegistry.get(rule.agent ?? agentRegistry.getDefault()?.name ?? '');
+        const store = runtime?.inlineAllowStore ?? inlineAllowStore;
+        for (const toolName of rule.allow) {
+          store.addAllow(toolName, 'session');
+        }
+      }
+    });
     scheduler.start();
-    log.info('Scheduler started', { rules: config.schedules.length });
+    log.info('Scheduler started', { rules: allSchedules.length });
   }
 
-  // Main loop
-  const sessionsDir = path.join(configDir, 'sessions');
+  // Resolve runtime for an agent name
+  function resolveRuntime(agentName: string): { runtime: AgentRuntime; agentConfig: import('./config/schema.js').AgentConfig } | undefined {
+    // Try primary agent lookup via registry
+    const runtime = agentRegistry.get(agentName);
+    if (runtime) {
+      return { runtime, agentConfig: runtime.primaryAgentConfig };
+    }
+
+    // Try sub-agent lookup across runtimes
+    for (const rt of agentRegistry.all()) {
+      const agentConfig = rt.agentConfigs[agentName];
+      if (agentConfig) {
+        return { runtime: rt, agentConfig };
+      }
+    }
+
+    return undefined;
+  }
 
   // Inbound processing
   const inboundLoop = async () => {
@@ -326,11 +460,16 @@ async function main() {
       const { channel, sender, chatId, message, agentId: requestedAgent } = inbound;
       log.info('Inbound message', { channel, sender, chatId, length: message.length });
 
-      // Parse inline allows
-      const cleaned = inlineAllowStore.parseAndStore(message);
+      // Parse inline allows (per-agent if available)
+      const targetRuntime = requestedAgent ? agentRegistry.get(requestedAgent) : agentRegistry.getDefault();
+      const effectiveInlineAllowStore = targetRuntime?.inlineAllowStore ?? inlineAllowStore;
+      const cleaned = effectiveInlineAllowStore.parseAndStore(message);
+
+      // Aggregate skills from target runtime for slash command parsing
+      const effectiveSkills = targetRuntime?.skills ?? skills;
 
       // Intercept slash commands
-      const slashCmd = parseSlashCommand(cleaned, skills);
+      const slashCmd = parseSlashCommand(cleaned, effectiveSkills);
       if (slashCmd) {
         if (slashCmd.type === 'new') {
           const result = handleNew();
@@ -367,16 +506,22 @@ async function main() {
             }
 
             if (slashCmd.args) {
-              // Has args — inject setup messages then process args via agent
-              const targetAgent = requestedAgent && config.agents[requestedAgent]
-                ? requestedAgent : routeMessage(slashCmd.args, config.agents, config.teams).agentId!;
+              const resolved = requestedAgent ? resolveRuntime(requestedAgent) : undefined;
+              const targetAgent = resolved?.agentConfig.name
+                ?? routeMessage(slashCmd.args, allAgents, allTeams, agentRegistry.getDefault()?.name ?? 'default').agentId!;
               processAgentMessage(targetAgent, slashCmd.args, channel, chatId, sender, undefined, result.messages);
             } else {
-              // Activation only — save injected messages to session, publish confirmation
-              const defaultAgent = Object.keys(config.agents)[0];
-              const agentId = requestedAgent ?? defaultAgent;
-              const messages = loadSession(sessionsDir, agentId, channel, chatId);
-              const systemPrompt = buildSystemPrompt(config.agents[agentId], config, toolRegistry, undefined, skills);
+              const defRuntime = agentRegistry.getDefault();
+              const agentId = requestedAgent ?? defRuntime?.name ?? '_default';
+              const resolved = resolveRuntime(agentId);
+              const sessDir = resolved?.runtime.sessionsDir ?? path.join(configDir, 'sessions');
+              const messages = loadSession(sessDir, agentId, channel, chatId);
+              const effectiveConfig = resolved?.runtime.resolvedConfig ?? config;
+              const systemPrompt = buildSystemPrompt(
+                resolved?.agentConfig ?? config.agents[agentId] ?? config.agents['default'],
+                effectiveConfig, toolRegistry, undefined, effectiveSkills,
+                resolved?.runtime.dir,
+              );
               if (systemPrompt) {
                 if (messages.length > 0 && messages[0].role === 'system') {
                   messages[0].content = systemPrompt;
@@ -385,7 +530,7 @@ async function main() {
                 }
               }
               messages.push(...result.messages);
-              saveSession(sessionsDir, agentId, channel, chatId, messages);
+              saveSession(sessDir, agentId, channel, chatId, messages);
               bus.publishOutbound({ channel, chatId, content: result.agentMessage ?? 'Configuration mode activated.' });
             }
           }
@@ -404,16 +549,22 @@ async function main() {
             }
 
             if (slashCmd.args) {
-              // Has args — inject setup messages then process args via agent
-              const targetAgent = requestedAgent && config.agents[requestedAgent]
-                ? requestedAgent : routeMessage(slashCmd.args, config.agents, config.teams).agentId!;
+              const resolved = requestedAgent ? resolveRuntime(requestedAgent) : undefined;
+              const targetAgent = resolved?.agentConfig.name
+                ?? routeMessage(slashCmd.args, allAgents, allTeams, agentRegistry.getDefault()?.name ?? 'default').agentId!;
               processAgentMessage(targetAgent, slashCmd.args, channel, chatId, sender, undefined, result.messages);
             } else {
-              // Activation only — save injected messages to session
-              const defaultAgent = Object.keys(config.agents)[0];
-              const agentId = requestedAgent ?? defaultAgent;
-              const messages = loadSession(sessionsDir, agentId, channel, chatId);
-              const systemPrompt = buildSystemPrompt(config.agents[agentId], config, toolRegistry, undefined, skills);
+              const defRuntime = agentRegistry.getDefault();
+              const agentId = requestedAgent ?? defRuntime?.name ?? '_default';
+              const resolved = resolveRuntime(agentId);
+              const sessDir = resolved?.runtime.sessionsDir ?? path.join(configDir, 'sessions');
+              const messages = loadSession(sessDir, agentId, channel, chatId);
+              const effectiveConfig = resolved?.runtime.resolvedConfig ?? config;
+              const systemPrompt = buildSystemPrompt(
+                resolved?.agentConfig ?? config.agents[agentId] ?? config.agents['default'],
+                effectiveConfig, toolRegistry, undefined, effectiveSkills,
+                resolved?.runtime.dir,
+              );
               if (systemPrompt) {
                 if (messages.length > 0 && messages[0].role === 'system') {
                   messages[0].content = systemPrompt;
@@ -422,7 +573,7 @@ async function main() {
                 }
               }
               messages.push(...result.messages);
-              saveSession(sessionsDir, agentId, channel, chatId, messages);
+              saveSession(sessDir, agentId, channel, chatId, messages);
               bus.publishOutbound({ channel, chatId, content: result.agentMessage ?? `Skill "${slashCmd.name}" activated.` });
             }
           }
@@ -431,17 +582,25 @@ async function main() {
       }
 
       // If a specific agent was requested (e.g. from WebSocket), route directly
-      if (requestedAgent && config.agents[requestedAgent]) {
-        processAgentMessage(requestedAgent, cleaned, channel, chatId, sender);
-        continue;
+      if (requestedAgent) {
+        const resolved = resolveRuntime(requestedAgent);
+        if (resolved && agentRegistry.isPrimary(requestedAgent)) {
+          processAgentMessage(requestedAgent, cleaned, channel, chatId, sender);
+          continue;
+        }
+        // Sub-agents are not externally addressable — fall through to default routing
       }
 
-      // Route message
-      const route = routeMessage(cleaned, config.agents, config.teams);
+      // Route message using flat agent names from registry
+      const defaultAgentName = agentRegistry.getDefault()?.name ?? 'default';
+      const route = routeMessage(cleaned, allAgents, allTeams, defaultAgentName);
 
       if (route.type === 'team') {
-        // Team routing
-        const teamInfo = resolveTeam(route.teamId!, config.teams, config.agents);
+        // Team routing — look across all runtimes for the team
+        const resolved = resolveRuntime(route.agentId ?? '');
+        const effectiveTeams = resolved?.runtime.teams ?? allTeams;
+        const effectiveAgents = resolved?.runtime.agentConfigs ?? allAgents;
+        const teamInfo = resolveTeam(route.teamId!, effectiveTeams, effectiveAgents);
         if (!teamInfo) {
           bus.publishOutbound({ channel, chatId, content: `Unknown team: ${route.teamId}` });
           continue;
@@ -483,12 +642,14 @@ async function main() {
     conversationId?: string,
     prefixMessages?: Message[],
   ) {
-    const agentConfig = config.agents[agentId];
-    if (!agentConfig) {
+    // Resolve agent from registry (supports both primary and sub-agents)
+    const resolved = resolveRuntime(agentId);
+    if (!resolved) {
       bus.publishOutbound({ channel, chatId, content: `Unknown agent: ${agentId}` });
       return;
     }
 
+    const { runtime, agentConfig } = resolved;
     const provider = createProvider(agentConfig.provider);
     const model = agentConfig.model ?? provider.defaultModel;
     log.info('Processing message', { agentId, provider: agentConfig.provider, model, channel });
@@ -497,20 +658,25 @@ async function main() {
       signal: abortController.signal,
       channel,
       chatId,
-      policy,
-      policyEngine,
+      policy: runtime.policy,
+      policyEngine: runtime.policyEngine,
       approvalManager,
-      inlineAllowStore,
+      inlineAllowStore: runtime.inlineAllowStore,
       toolRegistry,
       hooks,
-      agentConfigs: config.agents,
+      agentConfigs: runtime.agentConfigs,
       currentAgentConfig: agentConfig,
       providerFactory: createProvider,
     };
 
     // Load session and build context (always refresh system prompt)
+    const sessionsDir = runtime.sessionsDir;
     const messages = loadSession(sessionsDir, agentId, channel, chatId);
-    const systemPrompt = buildSystemPrompt(agentConfig, config, toolRegistry, undefined, skills);
+    const effectiveSkills = runtime.skills;
+    const systemPrompt = buildSystemPrompt(
+      agentConfig, runtime.resolvedConfig, toolRegistry, undefined, effectiveSkills,
+      runtime.dir,
+    );
     if (systemPrompt) {
       if (messages.length > 0 && messages[0].role === 'system') {
         messages[0].content = systemPrompt;
@@ -561,7 +727,7 @@ async function main() {
       if (mentions.length > 0 && conversationId) {
         const conv = conversationTracker.get(conversationId);
         if (conv) {
-          const validAgents = Object.keys(config.agents);
+          const validAgents = agentRegistry.names();
           const { valid } = validateMentions(mentions, validAgents);
 
           if (valid.length > 0) {
@@ -638,9 +804,9 @@ async function main() {
   process.on('SIGTERM', shutdown);
 
   log.info('BearClaw daemon started', {
-    agents: Object.keys(config.agents),
+    agents: agentRegistry.names(),
     channels: config.channels.enabled,
-    schedules: config.schedules.length,
+    schedules: allSchedules.length,
   });
 
   // Start loops

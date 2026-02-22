@@ -13,6 +13,7 @@ export interface EventMap {
   'tool:completed': { agentId: string; chatId: string; toolCallId: string; toolName: string; args: Record<string, unknown>; isError: boolean; durationMs: number };
   'token:received': { agentId: string; chatId: string; token: string };
   'agent:response': { agentId: string; chatId: string; content: string; iterations: number; toolsUsed: string[] };
+  'schedule:triggered': { chatId: string; agentId: string; message: string; schedule: string };
 }
 
 type EventHandler<T> = (data: T) => void;

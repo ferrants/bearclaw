@@ -97,6 +97,7 @@ When `security.workspaceOnly` is `true`, agents can only read/write files within
 | `workspaceOnly` | boolean | `true` | Restrict file access to workspace |
 | `allowedCommands` | string[] | *(see defaults)* | Commands agents can execute |
 | `restrictedCommands` | object | *(see defaults)* | Commands with blocked argument patterns |
+| `allowMemoryWrite` | boolean | `false` | Allow agents to write to the memory directory (adds it to `allowedPaths`) |
 | `forbiddenPaths` | string[] | *(see defaults)* | Paths agents cannot access |
 | `rateLimits.global` | number | `20` | Max actions per hour (global) |
 | `rateLimits.perAgent` | number | — | Max actions per hour per agent |
@@ -301,7 +302,7 @@ Typical memory structure:
 
 ## Skills
 
-Skills are configured via filesystem convention, not `config.json`. Place skill directories in `{workspace}/skills/`:
+Skills are discovered from the filesystem. By default, BearClaw looks for skill directories in `{workspace}/skills/` and `~/.bearclaw/skills/`:
 
 ```
 ~/.bearclaw/workspace/skills/
@@ -314,7 +315,24 @@ Skills are configured via filesystem convention, not `config.json`. Place skill 
 
 Each `SKILL.md` has YAML frontmatter with `name` and `description`, plus a markdown body with instructions. Skills are loaded automatically at startup and their metadata is injected into the system prompt.
 
-See [Skills](skills.md) for the full format. BearClaw skills are compatible with Claude Code Agent Skills — the same `SKILL.md` works in both.
+### Custom skills directories (agent directory mode)
+
+In a `bearclaw.jsonc` agent config, use `skillsDirs` to load skills from additional directories:
+
+```jsonc
+{
+  "skillsDirs": [
+    ".agents/skills",            // relative to agent dir
+    "/home/user/shared-skills"   // absolute path
+  ]
+}
+```
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `skillsDirs` | string[] | `[]` | Extra directories containing skill subdirectories. Relative paths resolve from the agent directory. Searched before the default locations. |
+
+See [Skills](skills.md) for the full format and precedence rules. BearClaw skills are compatible with Claude Code Agent Skills — the same `SKILL.md` works in both.
 
 ## MCP Servers
 
@@ -353,6 +371,44 @@ MCP (Model Context Protocol) servers are configured in `config.json`. Each serve
 Tools discovered from each server are registered with a `{serverName}_{toolName}` prefix (e.g., `jira_create_issue`, `github_list_repos`). They go through the same security pipeline as built-in tools.
 
 Servers are started at startup and stopped during graceful shutdown.
+
+## Schedules
+
+Schedules allow agents to run on a timer without manual invocation. Each schedule can be configured with execution controls for autonomous operation.
+
+```jsonc
+{
+  "schedules": [
+    {
+      "interval": "every 6h",
+      "agent": "researcher",
+      "message": "Continue active tasks",
+      "newThread": true,
+      "allow": ["exec", "read_file", "write_file", "web_fetch", "search"],
+      "approvalMode": "auto-deny"
+    },
+    {
+      "cron": "0 9 * * 1",
+      "agent": "reporter",
+      "message": "Generate the weekly report",
+      "allow": ["read_file", "exec"],
+      "approvalMode": "auto-approve"
+    }
+  ]
+}
+```
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `cron` | string | — | Cron expression (mutually exclusive with `interval`) |
+| `interval` | string | — | Human-readable interval, e.g. `"every 6h"` (mutually exclusive with `cron`) |
+| `agent` | string | — | Target agent name |
+| `message` | string | — | Message sent to the agent on each firing |
+| `newThread` | boolean | `false` | When true, each run gets a fresh session (unique chatId) instead of accumulating history |
+| `allow` | string[] | `[]` | Tool names to auto-approve for this schedule via the inline allow store (`session` scope) |
+| `approvalMode` | string | — | Fallback for tools not in the `allow` list: `"auto-approve"` or `"auto-deny"`. If unset, falls through to the global gateway approval mode |
+
+The first example creates a tight sandbox: fresh thread every 6 hours, auto-allows 5 specific tools, denies anything else. The second reuses its conversation, allows read + exec, and auto-approves everything else.
 
 ## Monitoring
 

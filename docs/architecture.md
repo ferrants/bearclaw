@@ -57,7 +57,7 @@ bearclaw/
       policy.ts                       # Path validation, command allowlist
       policy-engine.ts                # Rule-based allow/deny/approve
       approvals.ts                    # Scoped approval caching
-      inline-allow.ts                 # [allow: once|day tool pattern] parsing
+      inline-allow.ts                 # [allow: once|session|day tool pattern] parsing
       secrets.ts                      # ChaCha20-Poly1305 AEAD
       pairing.ts                      # CSPRNG codes, SHA-256 tokens, lockout
       rate-limiter.ts                 # Sliding window, global + per-agent + per-tool

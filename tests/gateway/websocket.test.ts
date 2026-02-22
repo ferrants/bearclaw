@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'node:events';
 import { upgradeToWebSocket } from '../../src/gateway/websocket.js';
+import { WsHandler } from '../../src/gateway/ws-handler.js';
+import type { SessionProvider } from '../../src/gateway/ws-handler.js';
 import type { IncomingMessage } from 'node:http';
 
 function createMockSocket() {
@@ -135,5 +137,125 @@ describe('WebSocket', () => {
     const combined = Buffer.concat([makeClientFrame('one'), makeClientFrame('two')]);
     emitter.emit('data', combined);
     expect(received).toEqual(['one', 'two']);
+  });
+});
+
+describe('WsHandler chat list/history', () => {
+  function createWsHandlerWithSession(sessionProvider: SessionProvider) {
+    const bus = { publishInbound: vi.fn(), publishOutbound: vi.fn(), consumeInbound: vi.fn(), consumeOutbound: vi.fn() };
+    const pairing = { verifyToken: () => true, generateCode: vi.fn(), verifyCode: vi.fn(), addStaticKey: vi.fn() };
+    const eventBus = { on: vi.fn(), emit: vi.fn() };
+    const approvalBridge = { listPending: () => [], requestApproval: vi.fn(), resolveApproval: vi.fn(), clear: vi.fn() };
+    const mentionables = { query: () => [] };
+
+    const handler = new WsHandler(
+      bus as any,
+      pairing as any,
+      false,
+      eventBus as any,
+      approvalBridge as any,
+      mentionables as any,
+    );
+    handler.setSessionProvider(sessionProvider);
+    return handler;
+  }
+
+  function connectClient(handler: WsHandler) {
+    const { socket, emitter, written } = createMockSocket();
+    const req = {
+      url: '/ws',
+      headers: { host: 'localhost', 'sec-websocket-key': 'dGhlIHNhbXBsZSBub25jZQ==' },
+    } as unknown as IncomingMessage;
+    handler.handleUpgrade(req, socket, Buffer.alloc(0));
+    return { emitter, written };
+  }
+
+  function parseServerMessages(written: Buffer[]): unknown[] {
+    // Skip the first buffer (handshake response), parse subsequent WebSocket frames
+    const messages: unknown[] = [];
+    for (let i = 1; i < written.length; i++) {
+      const frame = written[i];
+      const len = frame[1] & 0x7f;
+      let offset = 2;
+      if (len === 126) offset = 4;
+      if (len === 127) offset = 10;
+      const payload = frame.subarray(offset).toString('utf8');
+      try {
+        messages.push(JSON.parse(payload));
+      } catch { /* ignore */ }
+    }
+    return messages;
+  }
+
+  it('list_chats returns chat_list response', () => {
+    const sessionProvider: SessionProvider = {
+      listChats: () => [
+        { agentId: 'agent1', channel: 'websocket', chatId: 'chat1', lastModified: 1000, messageCount: 5 },
+      ],
+      getChatHistory: () => [],
+    };
+    const handler = createWsHandlerWithSession(sessionProvider);
+    const { emitter, written } = connectClient(handler);
+
+    emitter.emit('data', makeClientFrame(JSON.stringify({ type: 'list_chats', id: 'q1' })));
+
+    const msgs = parseServerMessages(written);
+    const response = msgs.find((m: any) => m.type === 'chat_list') as any;
+    expect(response).toBeDefined();
+    expect(response.id).toBe('q1');
+    expect(response.chats).toHaveLength(1);
+    expect(response.chats[0].agentId).toBe('agent1');
+    expect(response.chats[0].chatId).toBe('chat1');
+  });
+
+  it('get_chat_history returns chat_history with messages', () => {
+    const sessionProvider: SessionProvider = {
+      listChats: () => [],
+      getChatHistory: () => [
+        { role: 'system', content: 'You are helpful' },
+        { role: 'user', content: 'hello' },
+        { role: 'assistant', content: 'hi there' },
+      ],
+    };
+    const handler = createWsHandlerWithSession(sessionProvider);
+    const { emitter, written } = connectClient(handler);
+
+    emitter.emit('data', makeClientFrame(JSON.stringify({
+      type: 'get_chat_history', id: 'q2', chatId: 'chat1', agentId: 'agent1',
+    })));
+
+    const msgs = parseServerMessages(written);
+    const response = msgs.find((m: any) => m.type === 'chat_history') as any;
+    expect(response).toBeDefined();
+    expect(response.id).toBe('q2');
+    expect(response.chatId).toBe('chat1');
+    expect(response.agentId).toBe('agent1');
+    // System messages should be excluded
+    expect(response.messages).toHaveLength(2);
+    expect(response.messages[0].role).toBe('user');
+    expect(response.messages[1].role).toBe('assistant');
+  });
+
+  it('get_chat_history excludes system messages', () => {
+    const sessionProvider: SessionProvider = {
+      listChats: () => [],
+      getChatHistory: () => [
+        { role: 'system', content: 'system prompt' },
+        { role: 'user', content: 'question' },
+        { role: 'assistant', content: 'answer' },
+        { role: 'tool', content: 'tool result' },
+      ],
+    };
+    const handler = createWsHandlerWithSession(sessionProvider);
+    const { emitter, written } = connectClient(handler);
+
+    emitter.emit('data', makeClientFrame(JSON.stringify({
+      type: 'get_chat_history', id: 'q3', chatId: 'c1',
+    })));
+
+    const msgs = parseServerMessages(written);
+    const response = msgs.find((m: any) => m.type === 'chat_history') as any;
+    expect(response.messages).toHaveLength(3);
+    expect(response.messages.every((m: any) => m.role !== 'system')).toBe(true);
   });
 });

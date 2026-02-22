@@ -11,16 +11,33 @@ const log = createLogger('skills');
  * Earlier directories take precedence — if the same skill name appears in
  * multiple directories, only the first occurrence is kept.
  *
+ * Each source directory has `/skills` appended automatically.
+ * Use `extraSkillsDirs` to specify directories that are already skill
+ * directories (no `/skills` suffix appended). Extra dirs are searched first.
+ *
  * Typical usage:
  *   loadSkills(workspacePath, configDir)
  * loads from {workspace}/skills/ first, then {configDir}/skills/.
  */
 export function loadSkills(...sourceDirs: string[]): SkillDef[] {
+  return loadSkillsMulti([], sourceDirs);
+}
+
+/**
+ * Load skills from explicit skill directories (no `/skills` appended) plus
+ * source directories (which get `/skills` appended). Explicit dirs are
+ * searched first, giving them highest precedence.
+ */
+export function loadSkillsMulti(explicitDirs: string[], sourceDirs: string[]): SkillDef[] {
   const seen = new Set<string>();
   const skills: SkillDef[] = [];
 
-  for (const baseDir of sourceDirs) {
-    const skillsDir = path.join(baseDir, 'skills');
+  const allDirs = [
+    ...explicitDirs,
+    ...sourceDirs.map(d => path.join(d, 'skills')),
+  ];
+
+  for (const skillsDir of allDirs) {
     const loaded = loadSkillsFromDir(skillsDir);
 
     for (const skill of loaded) {

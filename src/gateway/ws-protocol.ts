@@ -11,6 +11,7 @@ export interface ClientMessage_ApprovalResponse {
   type: 'approval_response';
   requestId: string;
   approved: boolean;
+  allow?: 'once' | 'session' | 'day';
 }
 
 export interface ClientMessage_QueryMentionables {
@@ -19,10 +20,27 @@ export interface ClientMessage_QueryMentionables {
   filter?: string;
 }
 
+export interface ClientMessage_ListChats {
+  type: 'list_chats';
+  id: string;
+  channel?: string;
+  agentId?: string;
+}
+
+export interface ClientMessage_GetChatHistory {
+  type: 'get_chat_history';
+  id: string;
+  chatId: string;
+  agentId?: string;
+  channel?: string;
+}
+
 export type ClientMessage =
   | ClientMessage_Message
   | ClientMessage_ApprovalResponse
-  | ClientMessage_QueryMentionables;
+  | ClientMessage_QueryMentionables
+  | ClientMessage_ListChats
+  | ClientMessage_GetChatHistory;
 
 // Server → Client messages
 export interface ServerMessage_Token {
@@ -92,6 +110,37 @@ export interface ServerMessage_CommandResult {
   message: string;
 }
 
+export interface ServerMessage_ScheduleTriggered {
+  type: 'schedule_triggered';
+  chatId: string;
+  agentId: string;
+  message: string;
+  schedule: string;
+}
+
+export interface ServerMessage_ChatList {
+  type: 'chat_list';
+  id: string;
+  chats: Array<{
+    agentId: string;
+    channel: string;
+    chatId: string;
+    lastModified: number;
+    messageCount: number;
+  }>;
+}
+
+export interface ServerMessage_ChatHistory {
+  type: 'chat_history';
+  id: string;
+  chatId: string;
+  agentId: string;
+  messages: Array<{
+    role: string;
+    content: string;
+  }>;
+}
+
 export interface ServerMessage_Error {
   type: 'error';
   id?: string;
@@ -108,6 +157,9 @@ export type ServerMessage =
   | ServerMessage_ToolCompleted
   | ServerMessage_Mentionables
   | ServerMessage_CommandResult
+  | ServerMessage_ScheduleTriggered
+  | ServerMessage_ChatList
+  | ServerMessage_ChatHistory
   | ServerMessage_Error;
 
 export interface Mentionable {

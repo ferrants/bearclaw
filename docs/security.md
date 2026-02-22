@@ -183,9 +183,16 @@ Users can grant temporary permissions directly in their messages:
 | Scope | Duration |
 |---|---|
 | `once` | Single use, consumed immediately |
+| `session` | Valid for the lifetime of the daemon process |
 | `day` | Valid for `dayScopeHours` (default: 24 hours) |
 
 Inline allow tags are stripped from the message before it reaches the LLM. Wildcard patterns use glob-style matching.
+
+These scopes are also available via the WebSocket `approval_response` message's `allow` field — see [Approval Scoping](./approval-scoping.md).
+
+### Schedule-Level Allows
+
+Scheduled tasks can pre-populate the inline allow store with a list of tools using the `allow` field in schedule configuration. These are registered with `session` scope before each firing. Combined with `approvalMode`, this gives fine-grained control over what scheduled agents can do autonomously — see [Configuration: Schedules](./configuration.md#schedules).
 
 ## Approval Manager
 

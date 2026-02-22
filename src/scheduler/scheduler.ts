@@ -1,11 +1,14 @@
 import type { ScheduleRule } from '../config/schema.js';
 import type { MessageBus } from '../bus/bus.js';
+import type { EventBus } from '../events.js';
 import { parseCron, nextCronTime } from './cron.js';
 import { parseInterval } from './interval.js';
 import type { CronFields } from './cron.js';
 import { createLogger } from '../logging.js';
 
 const log = createLogger('scheduler');
+
+export type OnScheduleFire = (rule: ScheduleRule, chatId: string) => void;
 
 interface ParsedRule {
   rule: ScheduleRule;
@@ -36,11 +39,15 @@ function abortableSleep(ms: number, signal: AbortSignal): Promise<void> {
 export class Scheduler {
   private parsed: ParsedRule[];
   private bus: MessageBus;
+  private eventBus: EventBus;
   private signal: AbortSignal;
+  private onFire?: OnScheduleFire;
 
-  constructor(rules: ScheduleRule[], bus: MessageBus, signal: AbortSignal) {
+  constructor(rules: ScheduleRule[], bus: MessageBus, eventBus: EventBus, signal: AbortSignal, onFire?: OnScheduleFire) {
     this.bus = bus;
+    this.eventBus = eventBus;
     this.signal = signal;
+    this.onFire = onFire;
     this.parsed = rules.map((rule, index) => {
       // Validate: exactly one of cron/interval
       const hasCron = rule.cron !== undefined && rule.cron !== '';
@@ -103,10 +110,24 @@ export class Scheduler {
           : rule.message;
 
         const timestamp = Date.now();
+        const chatId = rule.newThread
+          ? `schedule_${index}_${timestamp}`
+          : `schedule_${index}`;
+        const schedule = rule.cron ?? rule.interval ?? '';
+
+        this.onFire?.(rule, chatId);
+
+        this.eventBus.emit('schedule:triggered', {
+          chatId,
+          agentId: rule.agent ?? 'default',
+          message: rule.message,
+          schedule,
+        });
+
         this.bus.publishInbound({
           channel: 'scheduler',
           sender: 'scheduler',
-          chatId: `schedule_${index}`,
+          chatId,
           messageId: `sched_${index}_${timestamp}`,
           message,
           timestamp,

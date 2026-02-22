@@ -7,7 +7,7 @@ interface InlineAllow {
   expiresAt: number;
 }
 
-const ALLOW_REGEX = /\[allow:\s*(once|day)\s+(\S+)(?:\s+(.*?))?\]/g;
+const ALLOW_REGEX = /\[allow:\s*(once|day|session)\s+(\S+)(?:\s+(.*?))?\]/g;
 
 export class InlineAllowStore {
   private allows: InlineAllow[] = [];
@@ -31,21 +31,29 @@ export class InlineAllowStore {
       const toolName = match[2];
       const pattern = match[3] || undefined;
 
-      const ttlMs = scope === 'day'
-        ? this.dayScopeHours * 60 * 60 * 1000
-        : 0; // once = expires after single use
+      const expiresAt = scope === 'day'
+        ? Date.now() + this.dayScopeHours * 60 * 60 * 1000
+        : Infinity; // once + session = never auto-expires (once consumed on use, session lives forever)
 
       this.allows.push({
         toolName,
         pattern,
         scope,
-        expiresAt: scope === 'day' ? Date.now() + ttlMs : Infinity, // once = never auto-expires, consumed on use
+        expiresAt,
       });
 
       cleaned = cleaned.replace(match[0], '');
     }
 
     return cleaned.trim();
+  }
+
+  addAllow(toolName: string, scope: InlineAllowScope, pattern?: string): void {
+    const expiresAt = scope === 'day'
+      ? Date.now() + this.dayScopeHours * 60 * 60 * 1000
+      : Infinity; // once consumed on use, session lives for process lifetime
+
+    this.allows.push({ toolName, pattern, scope, expiresAt });
   }
 
   isAllowed(toolName: string, arg?: string): boolean {

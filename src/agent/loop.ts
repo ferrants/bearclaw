@@ -127,6 +127,7 @@ export async function runAgentLoop(
             durationMs,
             isError: result.isError,
             resultLength: result.forLLM.length,
+            ...(result.isError ? { error: result.forLLM.slice(0, 200) } : {}),
           });
 
           eventBus?.emit('tool:completed', {

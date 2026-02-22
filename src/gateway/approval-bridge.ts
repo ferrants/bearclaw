@@ -67,18 +67,18 @@ export class ApprovalBridge {
     return { requestId, decision };
   }
 
-  resolveApproval(requestId: string, approved: boolean): boolean {
+  resolveApproval(requestId: string, approved: boolean): ApprovalRequest | null {
     const entry = this.pending.get(requestId);
     if (!entry) {
       log.warn('Approval not found', { requestId });
-      return false;
+      return null;
     }
 
     clearTimeout(entry.timer);
     this.pending.delete(requestId);
     entry.resolve(approved);
     log.info('Approval resolved', { requestId, approved });
-    return true;
+    return entry.request;
   }
 
   listPending(): ApprovalRequest[] {

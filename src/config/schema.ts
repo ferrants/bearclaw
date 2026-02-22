@@ -15,6 +15,7 @@ export interface BearClawConfig {
     restrictedCommands: Record<string, string[]>;
     forbiddenPaths: string[];
     allowedPaths: string[];
+    allowMemoryWrite?: boolean;
     allowSubshells: boolean;
     rateLimits: {
       global: number;
@@ -84,6 +85,9 @@ export interface ScheduleRule {
   interval?: string;
   agent?: string;
   message: string;
+  newThread?: boolean;
+  allow?: string[];
+  approvalMode?: 'auto-approve' | 'auto-deny';
 }
 
 export interface McpServerConfig {
@@ -113,7 +117,7 @@ export type PolicyAction = "allow" | "deny" | "approve";
 export type PolicyScope = "tool" | "exec" | "web" | "cli_delegation" | "message";
 export type ApprovalScope = "user+channel" | "conversation" | "global";
 export type LearningMode = "suggest_rules" | "auto_allow_prompt" | "auto_allow";
-export type InlineAllowScope = "once" | "day";
+export type InlineAllowScope = "once" | "day" | "session";
 
 export interface PolicyRule {
   id: string;

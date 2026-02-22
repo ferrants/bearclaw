@@ -6,13 +6,25 @@ import type { MessageBus } from '../bus/bus.js';
 import { upgradeToWebSocket, type WebSocketConnection } from './websocket.js';
 import { ApprovalBridge } from './approval-bridge.js';
 import type { MentionablesProvider } from './mentionables.js';
-import type { ClientMessage, ServerMessage } from './ws-protocol.js';
+import type { ClientMessage, ClientMessage_ApprovalResponse, ClientMessage_ListChats, ClientMessage_GetChatHistory, ServerMessage } from './ws-protocol.js';
+import type { InlineAllowScope } from '../config/schema.js';
+import type { ChatInfo } from '../agent/session.js';
+import type { Message } from '../providers/types.js';
 import { createLogger } from '../logging.js';
+
+export interface SessionProvider {
+  listChats(filter?: { channel?: string; agentId?: string }): ChatInfo[];
+  getChatHistory(agentId: string, channel: string, chatId: string): Message[];
+}
 
 const log = createLogger('ws-handler');
 
+export type OnAllowCallback = (agentId: string, toolName: string, scope: InlineAllowScope) => void;
+
 export class WsHandler {
   private clients = new Set<WebSocketConnection>();
+
+  private sessions: SessionProvider | null = null;
 
   constructor(
     private bus: MessageBus,
@@ -21,8 +33,13 @@ export class WsHandler {
     private eventBus: EventBus,
     private approvalBridge: ApprovalBridge,
     private mentionables: MentionablesProvider,
+    private onAllow?: OnAllowCallback,
   ) {
     this.subscribeEvents();
+  }
+
+  setSessionProvider(provider: SessionProvider): void {
+    this.sessions = provider;
   }
 
   handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): void {
@@ -125,6 +142,12 @@ export class WsHandler {
       case 'query_mentionables':
         this.handleQueryMentionables(conn, msg);
         break;
+      case 'list_chats':
+        this.handleListChats(conn, msg);
+        break;
+      case 'get_chat_history':
+        this.handleGetChatHistory(conn, msg);
+        break;
       default:
         this.sendTo(conn, {
           type: 'error',
@@ -156,15 +179,21 @@ export class WsHandler {
 
   private handleApprovalResponse(
     conn: WebSocketConnection,
-    msg: { requestId: string; approved: boolean },
+    msg: ClientMessage_ApprovalResponse,
   ): void {
-    const resolved = this.approvalBridge.resolveApproval(msg.requestId, msg.approved);
-    if (!resolved) {
+    const request = this.approvalBridge.resolveApproval(msg.requestId, msg.approved);
+    if (!request) {
       this.sendTo(conn, {
         type: 'error',
         code: 'APPROVAL_NOT_FOUND',
         message: `No pending approval: ${msg.requestId}`,
       });
+      return;
+    }
+
+    // Register durable allow if requested and approved
+    if (msg.approved && msg.allow && msg.allow !== 'once' && this.onAllow) {
+      this.onAllow(request.agentId, request.toolName, msg.allow);
     }
   }
 
@@ -174,6 +203,36 @@ export class WsHandler {
   ): void {
     const items = this.mentionables.query(msg.filter);
     this.sendTo(conn, { type: 'mentionables', id: msg.id, items });
+  }
+
+  private handleListChats(conn: WebSocketConnection, msg: ClientMessage_ListChats): void {
+    if (!this.sessions) {
+      this.sendTo(conn, { type: 'error', id: msg.id, code: 'NOT_AVAILABLE', message: 'Session provider not configured' });
+      return;
+    }
+    const filter: { channel?: string; agentId?: string } = {};
+    if (msg.channel) filter.channel = msg.channel;
+    if (msg.agentId) filter.agentId = msg.agentId;
+    const chats = this.sessions.listChats(Object.keys(filter).length > 0 ? filter : undefined);
+    this.sendTo(conn, { type: 'chat_list', id: msg.id, chats });
+  }
+
+  private handleGetChatHistory(conn: WebSocketConnection, msg: ClientMessage_GetChatHistory): void {
+    if (!this.sessions) {
+      this.sendTo(conn, { type: 'error', id: msg.id, code: 'NOT_AVAILABLE', message: 'Session provider not configured' });
+      return;
+    }
+    if (!msg.chatId) {
+      this.sendTo(conn, { type: 'error', id: msg.id, code: 'MISSING_FIELD', message: 'chatId required' });
+      return;
+    }
+    const agentId = msg.agentId ?? 'default';
+    const channel = msg.channel ?? 'websocket';
+    const messages = this.sessions.getChatHistory(agentId, channel, msg.chatId);
+    const filtered = messages
+      .filter(m => m.role !== 'system')
+      .map(m => ({ role: m.role, content: m.content }));
+    this.sendTo(conn, { type: 'chat_history', id: msg.id, chatId: msg.chatId, agentId, messages: filtered });
   }
 
   private subscribeEvents(): void {
@@ -229,6 +288,16 @@ export class WsHandler {
         content: data.content,
         iterations: data.iterations,
         toolsUsed: data.toolsUsed,
+      });
+    });
+
+    this.eventBus.on('schedule:triggered', (data) => {
+      this.broadcast({
+        type: 'schedule_triggered',
+        chatId: data.chatId,
+        agentId: data.agentId,
+        message: data.message,
+        schedule: data.schedule,
       });
     });
   }
