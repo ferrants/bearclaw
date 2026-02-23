@@ -103,6 +103,17 @@ bearclaw-daemon
 
 The daemon supports multiple channels (CLI, Telegram), multi-agent routing, team orchestration, and the HTTP gateway.
 
+### 5. Terminal UI
+
+For a full terminal interface with streaming responses, tool call visibility, and approval workflows, see [BearClaw TUI](https://github.com/ferrants/bearclaw-tui). It connects to the daemon over WebSocket.
+
+```bash
+git clone https://github.com/ferrants/bearclaw-tui.git
+cd bearclaw-tui
+bun install
+bun start
+```
+
 ## Configuration
 
 BearClaw uses a single `config.json` with sensible defaults. You only need to specify what you want to override.
