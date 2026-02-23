@@ -1,0 +1,34 @@
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.4",
+  "base_commit_sha": "7cb28f5ee81b34286d6961d6963638e006e22b1b",
+  "prompts": {
+    "77a6e51741e15c81": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e8bdbeb6-ffd8-4e84-8273-67cac2262c64",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Matt Ferrante <matt@heyferrante.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 629,
+      "overriden_lines": 0
+    },
+    "f64889c73e553f72": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c8c74a6d-c667-4e99-92ca-415a5ce7dff0",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Matt Ferrante <matt@heyferrante.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 67,
+      "overriden_lines": 0
+    }
+  }
+}
