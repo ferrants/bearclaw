@@ -1,6 +1,4 @@
-# CLAUDE.md
-
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+BearClaw is an AI agent framework with two entry points: a CLI REPL (`src/index.ts`) and a multi-channel daemon (`src/daemon.ts`). Both share the same core subsystems wired up in `main()`.
 
 ## Commands
 
@@ -15,8 +13,6 @@ npx vitest run tests/security/policy.test.ts   # Run a single test file
 ```
 
 ## Architecture
-
-BearClaw is an AI agent framework with two entry points: a CLI REPL (`src/index.ts`) and a multi-channel daemon (`src/daemon.ts`). Both share the same core subsystems wired up in `main()`.
 
 ### Core Loop
 
