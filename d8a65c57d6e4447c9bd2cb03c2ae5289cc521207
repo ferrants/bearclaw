@@ -1,0 +1,128 @@
+docs/approval-scoping.md
+  cd8e75db75551ef0 23,25,27-61,65-70,72,80-103
+tests/security/user-rules.test.ts
+  cd8e75db75551ef0 1-169
+src/gateway/ws-handler.ts
+  cd8e75db75551ef0 14-17,29-42,60,175-179,181-183,217-236,247-258,260-270,272-305
+tests/gateway/approval-bridge.test.ts
+  cd8e75db75551ef0 21,23,39,57,59,62,64,77-78,96-137
+src/tools/builtin/read-file.ts
+  aaef5fbff24ae87e 26
+src/tools/builtin/list-dir.ts
+  aaef5fbff24ae87e 25
+src/agent/loop.ts
+  cd8e75db75551ef0 107-113,116
+src/config/schema.ts
+  cd8e75db75551ef0 90,120
+src/config/agent-loader.ts
+  aaef5fbff24ae87e 92,126-128,131-133,137-138
+docs/security.md
+  aaef5fbff24ae87e 33,35,42-45,100-138
+src/tools/builtin/edit-file.ts
+  aaef5fbff24ae87e 33
+src/gateway/ws-protocol.ts
+  9594abb412ecb73f 135
+  cd8e75db75551ef0 14-17,41-58,65-67,169-201,221-223
+src/security/policy.ts
+  aaef5fbff24ae87e 19-25,29-30,33,40
+src/security/policy-engine.ts
+  cd8e75db75551ef0 19-23,35,37,46-49,51-52
+src/tools/builtin/search.ts
+  aaef5fbff24ae87e 40
+src/tools/types.ts
+  cd8e75db75551ef0 2,48-54,56,67
+src/daemon.ts
+  9594abb412ecb73f 521-524,528,530-535
+  cd8e75db75551ef0 50,56,122-133,281-282,308-312,413-416,422-438
+src/index.ts
+  cd8e75db75551ef0 11,80-88,91-128,131,136,142-144,217-223,282,380-388,391-396
+src/security/user-rules.ts
+  cd8e75db75551ef0 1-94
+src/gateway/approval-bridge.ts
+  cd8e75db75551ef0 16-21,24,49,62,66,76,85-86,97
+src/tools/hooks.ts
+  cd8e75db75551ef0 1,10,36,43
+tests/config/agent-loader.test.ts
+  aaef5fbff24ae87e 148,156,162-221
+src/config/instance-schema.ts
+  aaef5fbff24ae87e 50
+src/tools/builtin/write-file.ts
+  aaef5fbff24ae87e 40
+docs/configuration.md
+  aaef5fbff24ae87e 17,91,98-99
+docs/websocket-api.md
+  9594abb412ecb73f 345,349-351
+  cd8e75db75551ef0 76,93-112,171-210,413-467
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.5",
+  "base_commit_sha": "d8a65c57d6e4447c9bd2cb03c2ae5289cc521207",
+  "prompts": {
+    "77a6e51741e15c81": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e8bdbeb6-ffd8-4e84-8273-67cac2262c64",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Matt Ferrante <matt@heyferrante.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 629,
+      "overriden_lines": 0
+    },
+    "9594abb412ecb73f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ff70ba61-f97b-445e-af8f-41bde54d1d1e",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Matt Ferrante <matt@heyferrante.com>",
+      "messages": [],
+      "total_additions": 21,
+      "total_deletions": 7,
+      "accepted_lines": 17,
+      "overriden_lines": 0
+    },
+    "aaef5fbff24ae87e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8368f606-3459-40eb-b7b9-f5151ba67e1e",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Matt Ferrante <matt@heyferrante.com>",
+      "messages": [],
+      "total_additions": 143,
+      "total_deletions": 18,
+      "accepted_lines": 141,
+      "overriden_lines": 0
+    },
+    "cd8e75db75551ef0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ad1e317f-bb68-4ea1-86e4-c60dbac2d4b1",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Matt Ferrante <matt@heyferrante.com>",
+      "messages": [],
+      "total_additions": 849,
+      "total_deletions": 58,
+      "accepted_lines": 840,
+      "overriden_lines": 0
+    },
+    "f64889c73e553f72": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c8c74a6d-c667-4e99-92ca-415a5ce7dff0",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Matt Ferrante <matt@heyferrante.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 67,
+      "overriden_lines": 0
+    }
+  }
+}
