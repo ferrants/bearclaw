@@ -14,6 +14,7 @@ BearClaw uses a single `config.json` file located at `~/.bearclaw/config.json` (
     "workspaceOnly": true,
     "allowedCommands": ["git", "npm", "node", "..."],
     "restrictedCommands": { "curl": ["-o", "--output"] },
+    "allowedPaths": ["/home/user/projects/shared-app"],
     "forbiddenPaths": ["/etc", "/root", "~/.ssh", "..."],
     "rateLimits": {
       "global": 20,
@@ -87,14 +88,15 @@ BearClaw uses a single `config.json` file located at `~/.bearclaw/config.json` (
 |---|---|---|---|
 | `path` | string | `~/.bearclaw/workspace` | Root directory for agent file operations |
 
-When `security.workspaceOnly` is `true`, agents can only read/write files within this directory.
+When `security.workspaceOnly` is `true`, agents can only read/write files within this directory and any paths listed in `security.allowedPaths`.
 
 ## Security
 
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `autonomy` | string | `"supervised"` | Global autonomy level |
-| `workspaceOnly` | boolean | `true` | Restrict file access to workspace |
+| `workspaceOnly` | boolean | `true` | Restrict file access to workspace + `allowedPaths` |
+| `allowedPaths` | string[] | `[]` | Absolute paths agents may access when `workspaceOnly` is true |
 | `allowedCommands` | string[] | *(see defaults)* | Commands agents can execute |
 | `restrictedCommands` | object | *(see defaults)* | Commands with blocked argument patterns |
 | `allowMemoryWrite` | boolean | `false` | Allow agents to write to the memory directory (adds it to `allowedPaths`) |

@@ -6,7 +6,16 @@ import type { MessageBus } from '../bus/bus.js';
 import { upgradeToWebSocket, type WebSocketConnection } from './websocket.js';
 import { ApprovalBridge } from './approval-bridge.js';
 import type { MentionablesProvider } from './mentionables.js';
-import type { ClientMessage, ClientMessage_ApprovalResponse, ClientMessage_ListChats, ClientMessage_GetChatHistory, ServerMessage } from './ws-protocol.js';
+import type {
+  ClientMessage,
+  ClientMessage_ApprovalResponse,
+  ClientMessage_ListChats,
+  ClientMessage_GetChatHistory,
+  ClientMessage_ListPendingApprovals,
+  ClientMessage_ListUserRules,
+  ClientMessage_RemoveUserRule,
+  ServerMessage,
+} from './ws-protocol.js';
 import type { InlineAllowScope } from '../config/schema.js';
 import type { ChatInfo } from '../agent/session.js';
 import type { Message } from '../providers/types.js';
@@ -15,6 +24,20 @@ import { createLogger } from '../logging.js';
 export interface SessionProvider {
   listChats(filter?: { channel?: string; agentId?: string }): ChatInfo[];
   getChatHistory(agentId: string, channel: string, chatId: string): Message[];
+}
+
+export interface UserRuleCallbacks {
+  onAlwaysAllow?: (agentId: string, toolName: string) => void;
+  onAlwaysDeny?: (agentId: string, toolName: string) => void;
+  listRules?: () => Array<{
+    id: string;
+    action: 'allow' | 'deny';
+    toolName: string;
+    agentId?: string;
+    createdAt: string;
+    createdBy: 'ws-approval' | 'cli';
+  }>;
+  removeRule?: (ruleId: string) => boolean;
 }
 
 const log = createLogger('ws-handler');
@@ -34,6 +57,7 @@ export class WsHandler {
     private approvalBridge: ApprovalBridge,
     private mentionables: MentionablesProvider,
     private onAllow?: OnAllowCallback,
+    private userRuleCallbacks?: UserRuleCallbacks,
   ) {
     this.subscribeEvents();
   }
@@ -148,6 +172,15 @@ export class WsHandler {
       case 'get_chat_history':
         this.handleGetChatHistory(conn, msg);
         break;
+      case 'list_pending_approvals':
+        this.handleListPendingApprovals(conn, msg);
+        break;
+      case 'list_user_rules':
+        this.handleListUserRules(conn, msg);
+        break;
+      case 'remove_user_rule':
+        this.handleRemoveUserRule(conn, msg);
+        break;
       default:
         this.sendTo(conn, {
           type: 'error',
@@ -181,7 +214,26 @@ export class WsHandler {
     conn: WebSocketConnection,
     msg: ClientMessage_ApprovalResponse,
   ): void {
-    const request = this.approvalBridge.resolveApproval(msg.requestId, msg.approved);
+    // Handle reject: resolve with rejected flag
+    if (msg.reject) {
+      const request = this.approvalBridge.resolveApproval(msg.requestId, {
+        approved: false,
+        rejected: true,
+        feedback: msg.feedback,
+      });
+      if (!request) {
+        this.sendTo(conn, {
+          type: 'error',
+          code: 'APPROVAL_NOT_FOUND',
+          message: `No pending approval: ${msg.requestId}`,
+        });
+      }
+      return;
+    }
+
+    const request = this.approvalBridge.resolveApproval(msg.requestId, {
+      approved: msg.approved,
+    });
     if (!request) {
       this.sendTo(conn, {
         type: 'error',
@@ -192,9 +244,65 @@ export class WsHandler {
     }
 
     // Register durable allow if requested and approved
-    if (msg.approved && msg.allow && msg.allow !== 'once' && this.onAllow) {
-      this.onAllow(request.agentId, request.toolName, msg.allow);
+    if (msg.approved && msg.allow) {
+      if (msg.allow === 'always') {
+        // Persistent allow via UserRuleStore
+        this.userRuleCallbacks?.onAlwaysAllow?.(request.agentId, request.toolName);
+      } else if (msg.allow !== 'once' && this.onAllow) {
+        this.onAllow(request.agentId, request.toolName, msg.allow);
+      }
     }
+
+    // Register persistent deny
+    if (!msg.approved && msg.deny === 'always') {
+      this.userRuleCallbacks?.onAlwaysDeny?.(request.agentId, request.toolName);
+    }
+  }
+
+  private handleListPendingApprovals(
+    conn: WebSocketConnection,
+    msg: ClientMessage_ListPendingApprovals,
+  ): void {
+    let approvals = this.approvalBridge.listPending();
+
+    // Optional filtering
+    if (msg.chatId) {
+      approvals = approvals.filter(a => a.chatId === msg.chatId);
+    }
+    if (msg.agentId) {
+      approvals = approvals.filter(a => a.agentId === msg.agentId);
+    }
+
+    this.sendTo(conn, {
+      type: 'pending_approvals',
+      id: msg.id,
+      approvals,
+    });
+  }
+
+  private handleListUserRules(
+    conn: WebSocketConnection,
+    msg: ClientMessage_ListUserRules,
+  ): void {
+    const rules = this.userRuleCallbacks?.listRules?.() ?? [];
+    this.sendTo(conn, {
+      type: 'user_rules',
+      id: msg.id,
+      rules,
+    });
+  }
+
+  private handleRemoveUserRule(
+    conn: WebSocketConnection,
+    msg: ClientMessage_RemoveUserRule,
+  ): void {
+    const success = this.userRuleCallbacks?.removeRule?.(msg.ruleId) ?? false;
+    this.sendTo(conn, {
+      type: 'user_rule_removed',
+      id: msg.id,
+      ruleId: msg.ruleId,
+      success,
+    });
   }
 
   private handleQueryMentionables(

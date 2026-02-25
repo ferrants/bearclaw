@@ -30,16 +30,19 @@ Every file operation is checked before execution:
 
 1. **Null byte check** — Rejects paths containing `\0`
 2. **Upward escape** — Rejects paths that normalize to start with `..`
-3. **Workspace-only** — When enabled, rejects absolute paths
+3. **Workspace-only + allowed paths** — When `workspaceOnly` is true, absolute paths must fall under the workspace or an entry in `allowedPaths`
 4. **Forbidden paths** — Checks against the forbidden path list using path-separator-delimited prefix matching (not substring matching)
-5. **Symlink resolution** — After initial checks pass, the resolved (real) path is verified to still be within the workspace
+5. **Symlink resolution** — After initial checks pass, the resolved (real) path is verified to still be within the workspace or an allowed path
 
 ```
 User input: "../../../etc/passwd"
   → normalize: "../../etc/passwd" starts with ".." → BLOCKED
 
 User input: "/etc/shadow"
-  → workspaceOnly=true, absolute path → BLOCKED
+  → workspaceOnly=true, not in allowedPaths → BLOCKED
+
+User input: "/home/user/projects/shared-app/src/index.ts"
+  → workspaceOnly=true, under allowedPaths entry → ALLOWED
 
 User input: "data/notes.txt"
   → normalize: "data/notes.txt" ✓
@@ -93,6 +96,45 @@ Default forbidden paths:
 ```
 
 Tilde (`~`) paths are expanded to the user's home directory.
+
+### Allowed Paths
+
+When `workspaceOnly` is `true`, agents can only access files inside the workspace directory. The `allowedPaths` setting grants access to additional absolute paths outside the workspace.
+
+**Instance-level** (`~/.bearclaw/config.jsonc`):
+
+```json
+{
+  "security": {
+    "allowedPaths": [
+      "/home/user/projects/shared-app",
+      "/home/user/data"
+    ]
+  }
+}
+```
+
+Instance `allowedPaths` define the ceiling — all agents in this instance may access these paths.
+
+**Agent-level** (`bearclaw.jsonc`):
+
+```jsonc
+{
+  "security": {
+    "allowedPaths": [
+      "./workspace",                          // relative to agent dir — always valid
+      "/home/user/projects/shared-app/prd"    // under an instance allowedPath — valid
+    ]
+  }
+}
+```
+
+Agent `allowedPaths` can reference:
+- **Relative paths** within the agent directory (always accepted)
+- **Absolute paths** that fall under an instance-level `allowedPaths` entry (agents can narrow the scope, but can't grant themselves access to paths the instance admin hasn't approved)
+- Absolute paths outside both the agent directory and instance `allowedPaths` are silently ignored
+
+This follows the same principle as other security settings: agents cannot weaken instance security.
 
 ## PolicyEngine
 

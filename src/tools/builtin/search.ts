@@ -37,7 +37,7 @@ export const searchTool: Tool = {
       return errorResult(`Path not allowed: ${searchPath}`);
     }
 
-    const resolved = path.resolve(ctx.policy.workspaceDir, searchPath);
+    const resolved = path.resolve(ctx.policy.workspaceDir, ctx.policy.expandPath(searchPath));
 
     let regex: RegExp;
     try {

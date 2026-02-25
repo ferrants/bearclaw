@@ -73,7 +73,7 @@ npx wscat -c 'ws://localhost:3000/ws?token=YOUR_TOKEN'
 
 Slash commands (`/config`, `/new`, `/{skill-name}`) are intercepted by the daemon before routing. Instead of an `agent_response`, you'll receive a `command_result` message. See [command_result](#command_result--slash-command-confirmation) below.
 
-### `approval_response` — Approve or deny a tool call
+### `approval_response` — Approve, deny, or reject a tool call
 
 Sent in response to an `approval_needed` event from the server.
 
@@ -90,7 +90,26 @@ Sent in response to an `approval_needed` event from the server.
 |-------|----------|-------------|
 | `requestId` | yes | The `requestId` from the `approval_needed` message |
 | `approved` | yes | `true` to allow the tool to execute, `false` to block it |
-| `allow` | no | Durability scope for this approval. When set and `approved` is `true`, future calls to the same tool auto-approve without prompting. Values: `once` (default, just this call), `session` (rest of this daemon process), `day` (for `dayScopeHours` from config) |
+| `allow` | no | Durability scope for approvals. Values: `once` (default), `session`, `day`, `always` (persists to disk, survives restart) |
+| `deny` | no | Set to `"always"` when `approved` is `false` to create a persistent deny rule |
+| `reject` | no | Set to `true` to reject the approach (agent receives feedback and tries something else) |
+| `feedback` | no | Guidance message sent to the agent when `reject` is `true` |
+
+**Approve with `allow: "always"`** creates a persistent user rule that survives daemon restarts. The rule is stored in `~/.bearclaw/user-rules.json`.
+
+**Deny with `deny: "always"`** creates a persistent deny rule — the tool will be blocked without prompting on future calls.
+
+**Reject** is distinct from deny: it tells the agent "wrong approach, try something else" and feeds the optional `feedback` as the tool result. No persistent rule is created. Example:
+
+```json
+{
+  "type": "approval_response",
+  "requestId": "apr_123",
+  "approved": false,
+  "reject": true,
+  "feedback": "Don't delete that file, rename it instead"
+}
+```
 
 ### `query_mentionables` — Get autocomplete items
 
@@ -148,6 +167,46 @@ Returns the message history for a specific chat session. System messages are exc
 | `chatId` | yes | The chat/session ID to load history for |
 | `agentId` | no | Agent ID. Defaults to `default` |
 | `channel` | no | Channel name. Defaults to `websocket` |
+
+### `list_pending_approvals` — Query pending approvals
+
+Returns all unanswered approval requests across all agents/threads. Useful for UIs that need to show a global approval queue or recover after reconnection.
+
+```json
+{
+  "type": "list_pending_approvals",
+  "id": "q_1",
+  "chatId": "schedule_0",
+  "agentId": "default"
+}
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `id` | yes | Client-generated request ID |
+| `chatId` | no | Filter by chat/session ID |
+| `agentId` | no | Filter by agent ID |
+
+### `list_user_rules` — List persistent rules
+
+Returns all persistent allow/deny rules created via `allow: "always"` or `deny: "always"`.
+
+```json
+{
+  "type": "list_user_rules",
+  "id": "q_1"
+}
+```
+
+### `remove_user_rule` — Remove a persistent rule
+
+```json
+{
+  "type": "remove_user_rule",
+  "id": "q_1",
+  "ruleId": "ur_abc12345"
+}
+```
 
 ## Server → Client Messages
 
@@ -283,8 +342,13 @@ Emitted when the daemon handles a slash command (`/config`, `/new`, `/{skill-nam
 | `chatId` | The session the command applies to |
 | `command` | The command name (`new`, `config`, or skill name) |
 | `message` | Human-readable confirmation |
+| `newChatId` | *(only for `/new` via WebSocket)* The new session ID to use for subsequent messages |
 
 For `/config <args>` and `/{skill} <args>`, you'll receive both a `command_result` (confirming activation) and the normal `agent_response` flow for the args.
+
+**`/new` behavior by channel:**
+- **WebSocket**: The old session is preserved. The response includes a `newChatId` — switch to this ID for subsequent messages. Old sessions remain accessible via `list_chats` and `get_chat_history`.
+- **CLI / Telegram**: The old session is deleted (single-session UIs).
 
 ### `schedule_triggered` — Scheduled task activated
 
@@ -343,6 +407,61 @@ Response to `get_chat_history`. System messages are excluded; only user, assista
     { "role": "user", "content": "What files are here?" },
     { "role": "assistant", "content": "Here are the files..." }
   ]
+}
+```
+
+### `pending_approvals` — Pending approvals list
+
+Response to `list_pending_approvals`.
+
+```json
+{
+  "type": "pending_approvals",
+  "id": "q_1",
+  "approvals": [
+    {
+      "requestId": "apr_123_1",
+      "toolName": "exec",
+      "args": { "command": "rm -rf /tmp/build" },
+      "agentId": "default",
+      "chatId": "schedule_0",
+      "createdAt": 1708531200000
+    }
+  ]
+}
+```
+
+### `user_rules` — Persistent rules list
+
+Response to `list_user_rules`.
+
+```json
+{
+  "type": "user_rules",
+  "id": "q_1",
+  "rules": [
+    {
+      "id": "ur_abc12345",
+      "action": "allow",
+      "toolName": "exec",
+      "agentId": "default",
+      "createdAt": "2025-01-15T10:30:00.000Z",
+      "createdBy": "ws-approval"
+    }
+  ]
+}
+```
+
+### `user_rule_removed` — Rule removal confirmation
+
+Response to `remove_user_rule`.
+
+```json
+{
+  "type": "user_rule_removed",
+  "id": "q_1",
+  "ruleId": "ur_abc12345",
+  "success": true
 }
 ```
 

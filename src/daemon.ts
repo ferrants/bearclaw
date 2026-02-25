@@ -47,12 +47,13 @@ import { parseMentions, validateMentions } from './orchestrator/mentions.js';
 import { resolveTeam } from './orchestrator/team.js';
 import { GatewayServer } from './gateway/server.js';
 import { WsHandler } from './gateway/ws-handler.js';
-import { ApprovalBridge } from './gateway/approval-bridge.js';
+import { ApprovalBridge, type ApprovalDecision } from './gateway/approval-bridge.js';
 import { MentionablesProvider } from './gateway/mentionables.js';
 import { Scheduler } from './scheduler/index.js';
 import { parseSlashCommand } from './commands/slash.js';
 import { handleConfig, handleNew, handleSkill } from './commands/handlers.js';
 import type { ServerMessage_CommandResult } from './gateway/ws-protocol.js';
+import { UserRuleStore } from './security/user-rules.js';
 import { AgentRegistry } from './config/agent-registry.js';
 import { loadAgentDirConfig, buildResolvedConfig } from './config/agent-loader.js';
 import { createAgentRuntime, createDefaultAgentRuntime } from './config/agent-runtime-factory.js';
@@ -118,6 +119,18 @@ async function main() {
     config.security.allowSubshells,
   );
   const policyEngine = new PolicyEngine(config.policy, configDir);
+  const userRuleStore = new UserRuleStore(configDir);
+
+  // Sync user rules into all PolicyEngine instances
+  const syncUserRules = () => {
+    const rules = userRuleStore.toPolicyRules();
+    policyEngine.setUserRules(rules);
+    for (const runtime of agentRegistry.all()) {
+      runtime.policyEngine.setUserRules(rules);
+    }
+  };
+  syncUserRules();
+
   const approvalManager = new ApprovalManager(
     config.policy.approvalScope,
     config.policy.approvals.defaultTTLSeconds,
@@ -265,6 +278,8 @@ async function main() {
           if (schedRule?.approvalMode === 'auto-deny') {
             return { proceed: false, args };
           }
+          // 'user-rules': fall through to WS approval flow
+          // (user rules already checked via PolicyEngine above)
         }
       }
 
@@ -290,8 +305,11 @@ async function main() {
             chatId: ctx.chatId ?? '',
           });
 
-          const approved = await approvalDecision;
-          return { proceed: approved, args };
+          const decision: ApprovalDecision = await approvalDecision;
+          if (decision.rejected) {
+            return { proceed: false, args, rejected: true, feedback: decision.feedback };
+          }
+          return { proceed: decision.approved, args };
         }
 
         // No clients connected — fallback based on mode
@@ -392,10 +410,32 @@ async function main() {
       bus, pairing, config.gateway.requirePairing,
       eventBus, approvalBridge, mentionablesProvider,
       (agentId, toolName, scope) => {
+        if (scope === 'always') {
+          // 'always' is handled via UserRuleStore callbacks below
+          return;
+        }
         const runtime = agentRegistry.get(agentId);
         const store = runtime?.inlineAllowStore ?? inlineAllowStore;
         store.addAllow(toolName, scope);
         log.info('Allow registered from approval', { agentId, toolName, scope });
+      },
+      {
+        onAlwaysAllow: (agentId, toolName) => {
+          userRuleStore.addRule({ action: 'allow', toolName, agentId, createdBy: 'ws-approval' });
+          syncUserRules();
+          log.info('Persistent allow rule created', { agentId, toolName });
+        },
+        onAlwaysDeny: (agentId, toolName) => {
+          userRuleStore.addRule({ action: 'deny', toolName, agentId, createdBy: 'ws-approval' });
+          syncUserRules();
+          log.info('Persistent deny rule created', { agentId, toolName });
+        },
+        listRules: () => userRuleStore.listRules(),
+        removeRule: (ruleId) => {
+          const success = userRuleStore.removeRule(ruleId);
+          if (success) syncUserRules();
+          return success;
+        },
       },
     );
     wsHandler.setSessionProvider(sessionProvider);
@@ -473,18 +513,26 @@ async function main() {
       if (slashCmd) {
         if (slashCmd.type === 'new') {
           const result = handleNew();
-          clearAllAgentSessions(channel, chatId);
           // Re-hide config tools
           toolRegistry.setHidden('config_explain', true);
           toolRegistry.setHidden('config_get', true);
           toolRegistry.setHidden('config_set', true);
           const response = result.action === 'immediate' ? result.response : '';
-          bus.publishOutbound({ channel, chatId, content: response });
-          if (wsHandler) {
-            const cmdResult: ServerMessage_CommandResult = {
-              type: 'command_result', chatId, command: 'new', message: response,
-            };
-            wsHandler.broadcast(cmdResult);
+
+          if (channel === 'websocket') {
+            // WebSocket: keep old session, create a new chatId
+            const newChatId = `ws_${Date.now()}`;
+            bus.publishOutbound({ channel, chatId, content: response });
+            if (wsHandler) {
+              const cmdResult: ServerMessage_CommandResult = {
+                type: 'command_result', chatId, command: 'new', message: response, newChatId,
+              };
+              wsHandler.broadcast(cmdResult);
+            }
+          } else {
+            // CLI/Telegram: clear old session (single-session UIs)
+            clearAllAgentSessions(channel, chatId);
+            bus.publishOutbound({ channel, chatId, content: response });
           }
           continue;
         }

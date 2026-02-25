@@ -8,6 +8,7 @@ import { SecretStore } from './security/secrets.js';
 import { SecurityPolicy } from './security/policy.js';
 import { ScopedRateLimiter } from './security/rate-limiter.js';
 import { PolicyEngine } from './security/policy-engine.js';
+import { UserRuleStore } from './security/user-rules.js';
 import { ApprovalManager } from './security/approvals.js';
 import { InlineAllowStore } from './security/inline-allow.js';
 import { AnthropicProvider } from './providers/anthropic.js';
@@ -76,25 +77,71 @@ function parseArgs(argv: string[]): { prompt?: string; sessionId?: string; noCol
   return { prompt, sessionId, noColor, agentDir };
 }
 
-function cliApproval(toolName: string, args: Record<string, unknown>): Promise<boolean> {
+interface CliApprovalResult {
+  proceed: boolean;
+  scope?: 'session' | 'day' | 'always';
+  denyAlways?: boolean;
+  rejected?: boolean;
+  feedback?: string;
+}
+
+function cliApproval(toolName: string, args: Record<string, unknown>): Promise<CliApprovalResult> {
   return new Promise((resolve) => {
     const argSummary = args.command ? ` "${args.command}"` : args.path ? ` "${args.path}"` : '';
-    process.stdout.write(boldYellow(`\n[approval] Allow ${toolName}${argSummary}? (y/N) `));
+    process.stdout.write(boldYellow(`\n[approval] ${toolName}${argSummary}\n`));
+    process.stdout.write(boldYellow(`  [y]es  [s]ession  [d]ay  [p]ermanent  [n]o  [!]never  [r]eject: `));
+
+    const handleAnswer = (answer: string) => {
+      const a = answer.trim().toLowerCase();
+      switch (a) {
+        case 'y': case 'yes':
+          resolve({ proceed: true });
+          break;
+        case 's': case 'session':
+          resolve({ proceed: true, scope: 'session' });
+          break;
+        case 'd': case 'day':
+          resolve({ proceed: true, scope: 'day' });
+          break;
+        case 'p': case 'permanent':
+          resolve({ proceed: true, scope: 'always' });
+          break;
+        case '!': case 'never':
+          resolve({ proceed: false, denyAlways: true });
+          break;
+        case 'r': case 'reject':
+          // Ask for optional feedback
+          process.stdout.write(boldYellow('  Feedback (optional, press Enter to skip): '));
+          const handleFeedback = (fb: string) => {
+            resolve({ proceed: false, rejected: true, feedback: fb.trim() || undefined });
+          };
+          if (replRl) {
+            replRl.once('line', handleFeedback);
+          } else {
+            const rl2 = readline.createInterface({ input: process.stdin, output: process.stdout });
+            rl2.once('line', (fb: string) => { rl2.close(); handleFeedback(fb); });
+          }
+          break;
+        default:
+          resolve({ proceed: false });
+      }
+    };
 
     if (replRl) {
-      // Reuse the REPL's readline — no competing listeners
-      replRl.once('line', (answer: string) => {
-        resolve(answer.trim().toLowerCase() === 'y');
-      });
+      replRl.once('line', handleAnswer);
     } else {
-      // Fallback for non-REPL contexts (shouldn't happen, but safe)
       const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
       rl.once('line', (answer: string) => {
         rl.close();
-        resolve(answer.trim().toLowerCase() === 'y');
+        handleAnswer(answer);
       });
     }
   });
+}
+
+// Simple approval for config_set (unchanged behavior)
+function cliSimpleApproval(toolName: string, args: Record<string, unknown>): Promise<boolean> {
+  return cliApproval(toolName, args).then(r => r.proceed);
 }
 
 async function main() {
@@ -167,6 +214,13 @@ async function main() {
     );
   })();
   const policyEngine = agentRuntime?.policyEngine ?? new PolicyEngine(config.policy, configDir);
+  const userRuleStore = new UserRuleStore(configDir);
+  policyEngine.setUserRules(userRuleStore.toPolicyRules());
+
+  const syncUserRules = () => {
+    policyEngine.setUserRules(userRuleStore.toPolicyRules());
+  };
+
   const approvalManager = new ApprovalManager(
     effectiveConfig.policy.approvalScope,
     effectiveConfig.policy.approvals.defaultTTLSeconds,
@@ -225,7 +279,7 @@ async function main() {
   const configManager = new ConfigManager(config, agentRuntime?.dir);
   toolRegistry.registerHidden(configExplainTool);
   toolRegistry.registerHidden(createConfigGetTool(configManager));
-  toolRegistry.registerHidden(createConfigSetTool(configManager, () => cliApproval('config_set', {})));
+  toolRegistry.registerHidden(createConfigSetTool(configManager, () => cliSimpleApproval('config_set', {})));
 
   // Reload security objects when config changes (legacy mode only)
   configManager.onReload((newConfig) => {
@@ -323,9 +377,23 @@ async function main() {
       }
 
       // Prompt user for approval in CLI mode
-      const approved = await cliApproval(toolName, args);
-      if (!approved) {
+      const result = await cliApproval(toolName, args);
+      if (result.rejected) {
+        return { proceed: false, args, rejected: true, feedback: result.feedback };
+      }
+      if (!result.proceed) {
+        if (result.denyAlways) {
+          userRuleStore.addRule({ action: 'deny', toolName, agentId: ctx.currentAgentConfig.name, createdBy: 'cli' });
+          syncUserRules();
+        }
         return { proceed: false, args };
+      }
+      // Register durable scope if requested
+      if (result.scope === 'always') {
+        userRuleStore.addRule({ action: 'allow', toolName, agentId: ctx.currentAgentConfig.name, createdBy: 'cli' });
+        syncUserRules();
+      } else if (result.scope) {
+        inlineAllowStore.addAllow(toolName, result.scope);
       }
     }
 

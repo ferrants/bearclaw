@@ -104,8 +104,16 @@ export async function runAgentLoop(
 
         let result: ToolResult;
         if (!hookResult.proceed) {
-          result = errorResult(`Tool call blocked by policy: ${tc.name}`);
-          log.warn('Tool blocked', { agentId, tool: tc.name });
+          if (hookResult.rejected) {
+            const feedback = hookResult.feedback
+              ? `User rejected this approach: ${hookResult.feedback}`
+              : `User rejected this tool call. Try a different approach.`;
+            result = errorResult(feedback);
+            log.info('Tool rejected by user', { agentId, tool: tc.name, feedback: hookResult.feedback });
+          } else {
+            result = errorResult(`Tool call blocked by policy: ${tc.name}`);
+            log.warn('Tool blocked', { agentId, tool: tc.name });
+          }
           eventBus?.emit('tool:completed', {
             agentId: evAgentId, chatId: evChatId,
             toolCallId: tc.id, toolName: tc.name, args: tc.arguments,

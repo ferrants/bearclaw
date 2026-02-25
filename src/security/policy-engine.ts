@@ -16,6 +16,11 @@ export interface PolicyDecision {
   reason?: string;
 }
 
+export interface PolicyEvaluator {
+  evaluate(ctx: PolicyContext): PolicyDecision;
+  suggestRule(ctx: PolicyContext, decision: PolicyAction): void;
+}
+
 export interface PolicyContext {
   toolName: string;
   scope: PolicyScope;
@@ -27,8 +32,9 @@ export interface PolicyContext {
   agentId?: string;
 }
 
-export class PolicyEngine {
+export class PolicyEngine implements PolicyEvaluator {
   private suggestionsPath: string;
+  private userRules: PolicyRule[] = [];
 
   constructor(
     private config: PolicyConfig,
@@ -37,8 +43,13 @@ export class PolicyEngine {
     this.suggestionsPath = path.join(configDir, 'policy-suggestions.json');
   }
 
+  setUserRules(rules: PolicyRule[]): void {
+    this.userRules = rules;
+  }
+
   evaluate(ctx: PolicyContext): PolicyDecision {
-    const matching = this.config.rules.filter(rule => this.ruleMatches(rule, ctx));
+    const allRules = [...this.userRules, ...this.config.rules];
+    const matching = allRules.filter(rule => this.ruleMatches(rule, ctx));
 
     // Deny precedence: if any deny rule matches, deny
     if (this.config.denyPrecedence) {

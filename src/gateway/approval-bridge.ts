@@ -13,9 +13,15 @@ export interface ApprovalRequest {
   createdAt: number;
 }
 
+export interface ApprovalDecision {
+  approved: boolean;
+  rejected?: boolean;
+  feedback?: string;
+}
+
 interface PendingApproval {
   request: ApprovalRequest;
-  resolve: (approved: boolean) => void;
+  resolve: (decision: ApprovalDecision) => void;
   timer: ReturnType<typeof setTimeout>;
 }
 
@@ -40,7 +46,7 @@ export class ApprovalBridge {
     agentId: string;
     chatId: string;
     hasClients: boolean;
-  }): { requestId: string; decision: Promise<boolean> } {
+  }): { requestId: string; decision: Promise<ApprovalDecision> } {
     const requestId = `apr_${Date.now()}_${++nextId}`;
     const timeoutMs = params.hasClients ? this.defaultTimeoutMs : this.waitTimeoutMs;
 
@@ -53,11 +59,11 @@ export class ApprovalBridge {
       createdAt: Date.now(),
     };
 
-    const decision = new Promise<boolean>((resolve) => {
+    const decision = new Promise<ApprovalDecision>((resolve) => {
       const timer = setTimeout(() => {
         log.warn('Approval timed out', { requestId, toolName: params.toolName });
         this.pending.delete(requestId);
-        resolve(false);
+        resolve({ approved: false });
       }, timeoutMs);
 
       this.pending.set(requestId, { request, resolve, timer });
@@ -67,7 +73,7 @@ export class ApprovalBridge {
     return { requestId, decision };
   }
 
-  resolveApproval(requestId: string, approved: boolean): ApprovalRequest | null {
+  resolveApproval(requestId: string, decision: ApprovalDecision): ApprovalRequest | null {
     const entry = this.pending.get(requestId);
     if (!entry) {
       log.warn('Approval not found', { requestId });
@@ -76,8 +82,8 @@ export class ApprovalBridge {
 
     clearTimeout(entry.timer);
     this.pending.delete(requestId);
-    entry.resolve(approved);
-    log.info('Approval resolved', { requestId, approved });
+    entry.resolve(decision);
+    log.info('Approval resolved', { requestId, approved: decision.approved, rejected: decision.rejected });
     return entry.request;
   }
 
@@ -88,7 +94,7 @@ export class ApprovalBridge {
   clear(): void {
     for (const [id, entry] of this.pending) {
       clearTimeout(entry.timer);
-      entry.resolve(false);
+      entry.resolve({ approved: false });
       this.pending.delete(id);
     }
   }

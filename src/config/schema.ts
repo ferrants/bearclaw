@@ -87,7 +87,7 @@ export interface ScheduleRule {
   message: string;
   newThread?: boolean;
   allow?: string[];
-  approvalMode?: 'auto-approve' | 'auto-deny';
+  approvalMode?: 'auto-approve' | 'auto-deny' | 'user-rules';
 }
 
 export interface McpServerConfig {
@@ -117,7 +117,7 @@ export type PolicyAction = "allow" | "deny" | "approve";
 export type PolicyScope = "tool" | "exec" | "web" | "cli_delegation" | "message";
 export type ApprovalScope = "user+channel" | "conversation" | "global";
 export type LearningMode = "suggest_rules" | "auto_allow_prompt" | "auto_allow";
-export type InlineAllowScope = "once" | "day" | "session";
+export type InlineAllowScope = "once" | "day" | "session" | "always";
 
 export interface PolicyRule {
   id: string;

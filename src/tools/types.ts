@@ -1,5 +1,5 @@
 import type { SecurityPolicy } from '../security/policy.js';
-import type { PolicyEngine } from '../security/policy-engine.js';
+import type { PolicyEvaluator } from '../security/policy-engine.js';
 import type { ApprovalManager } from '../security/approvals.js';
 import type { InlineAllowStore } from '../security/inline-allow.js';
 import type { AgentConfig } from '../config/schema.js';
@@ -45,8 +45,15 @@ export interface ToolRegistry {
   toProviderDefs(): Array<{ name: string; description: string; parameters: Record<string, unknown> }>;
 }
 
+export interface BeforeHookResult {
+  proceed: boolean;
+  args: Record<string, unknown>;
+  rejected?: boolean;
+  feedback?: string;
+}
+
 export interface ToolHookRegistry {
-  runBefore(toolName: string, args: Record<string, unknown>, ctx: ToolContext): Promise<{ proceed: boolean; args: Record<string, unknown> }>;
+  runBefore(toolName: string, args: Record<string, unknown>, ctx: ToolContext): Promise<BeforeHookResult>;
   runAfter(toolName: string, args: Record<string, unknown>, result: ToolResult, ctx: ToolContext): Promise<void>;
   flush(timeoutMs?: number): Promise<void>;
 }
@@ -57,7 +64,7 @@ export interface ToolContext {
   chatId?: string;
   onUpdate?: (partial: string) => void;
   policy: SecurityPolicy;
-  policyEngine: PolicyEngine;
+  policyEngine: PolicyEvaluator;
   approvalManager: ApprovalManager;
   inlineAllowStore: InlineAllowStore;
   toolRegistry: ToolRegistry;

@@ -1,4 +1,4 @@
-import type { ToolResult, ToolContext } from './types.js';
+import type { ToolResult, ToolContext, BeforeHookResult } from './types.js';
 import { createLogger } from '../logging.js';
 
 const log = createLogger('tool-hooks');
@@ -7,7 +7,7 @@ export type BeforeToolCallHook = (
   toolName: string,
   args: Record<string, unknown>,
   ctx: ToolContext,
-) => Promise<{ proceed: boolean; args: Record<string, unknown> }>;
+) => Promise<BeforeHookResult>;
 
 export type AfterToolCallHook = (
   toolName: string,
@@ -33,14 +33,14 @@ export class ToolHookRegistryImpl {
     toolName: string,
     args: Record<string, unknown>,
     ctx: ToolContext,
-  ): Promise<{ proceed: boolean; args: Record<string, unknown> }> {
+  ): Promise<BeforeHookResult> {
     let currentArgs = { ...args };
 
     for (const hook of this.beforeHooks) {
       try {
         const result = await hook(toolName, currentArgs, ctx);
         if (!result.proceed) {
-          return { proceed: false, args: currentArgs };
+          return { proceed: false, args: currentArgs, rejected: result.rejected, feedback: result.feedback };
         }
         currentArgs = result.args;
       } catch (err) {

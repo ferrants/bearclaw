@@ -22,7 +22,7 @@ export const listDirTool: Tool = {
       return errorResult(`Path not allowed: ${dirPath}`);
     }
 
-    const resolved = path.resolve(ctx.policy.workspaceDir, dirPath);
+    const resolved = path.resolve(ctx.policy.workspaceDir, ctx.policy.expandPath(dirPath));
 
     try {
       const lines = await listRecursive(resolved, '', depth);

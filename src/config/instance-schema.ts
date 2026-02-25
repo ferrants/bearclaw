@@ -47,6 +47,7 @@ export interface InstanceConfig {
   security: {
     encrypt: boolean;
     forbiddenPaths: string[];
+    allowedPaths?: string[];
     rateLimits: {
       global: number;
       perAgent?: number;

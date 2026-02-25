@@ -145,7 +145,7 @@ describe('mergeSecurityConfig', () => {
     expect(result.forbiddenPaths).toContain('/root');
   });
 
-  it('filters allowedPaths to agent directory tree', () => {
+  it('filters agent allowedPaths to agent directory tree', () => {
     const agentDir = tmpDir();
     try {
       const result = mergeSecurityConfig(instanceSecurity, {
@@ -153,8 +153,72 @@ describe('mergeSecurityConfig', () => {
       }, agentDir);
       // ./workspace resolves within agent dir, so it's allowed
       expect(result.allowedPaths).toContain(path.resolve(agentDir, 'workspace'));
-      // /etc/passwd is outside agent dir, so it's filtered out
+      // /etc/passwd is outside agent dir and not in instance allowedPaths, so it's filtered out
       expect(result.allowedPaths).not.toContain('/etc/passwd');
+    } finally {
+      fs.rmSync(agentDir, { recursive: true, force: true });
+    }
+  });
+
+  it('carries through instance-level allowedPaths', () => {
+    const instanceWithAllowed = {
+      ...instanceSecurity,
+      allowedPaths: ['/home/user/projects/app', '/home/user/shared'],
+    };
+    const result = mergeSecurityConfig(instanceWithAllowed, undefined, '/tmp/agent');
+    expect(result.allowedPaths).toContain('/home/user/projects/app');
+    expect(result.allowedPaths).toContain('/home/user/shared');
+  });
+
+  it('allows agent to add paths under instance allowedPaths', () => {
+    const instanceWithAllowed = {
+      ...instanceSecurity,
+      allowedPaths: ['/home/user/projects/app'],
+    };
+    const agentDir = tmpDir();
+    try {
+      const result = mergeSecurityConfig(instanceWithAllowed, {
+        allowedPaths: ['/home/user/projects/app/prd'],
+      }, agentDir);
+      // Agent path is under an instance allowedPath, so it's accepted
+      expect(result.allowedPaths).toContain('/home/user/projects/app/prd');
+    } finally {
+      fs.rmSync(agentDir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects agent paths not under agent dir or instance allowedPaths', () => {
+    const instanceWithAllowed = {
+      ...instanceSecurity,
+      allowedPaths: ['/home/user/projects/app'],
+    };
+    const agentDir = tmpDir();
+    try {
+      const result = mergeSecurityConfig(instanceWithAllowed, {
+        allowedPaths: ['/home/user/projects/other-app', '/somewhere/else'],
+      }, agentDir);
+      // Neither path is under agent dir or instance allowedPaths
+      expect(result.allowedPaths).not.toContain('/home/user/projects/other-app');
+      expect(result.allowedPaths).not.toContain('/somewhere/else');
+      // Instance path still present
+      expect(result.allowedPaths).toContain('/home/user/projects/app');
+    } finally {
+      fs.rmSync(agentDir, { recursive: true, force: true });
+    }
+  });
+
+  it('allows agent to reference exact instance allowedPath', () => {
+    const instanceWithAllowed = {
+      ...instanceSecurity,
+      allowedPaths: ['/home/user/projects/app'],
+    };
+    const agentDir = tmpDir();
+    try {
+      const result = mergeSecurityConfig(instanceWithAllowed, {
+        allowedPaths: ['/home/user/projects/app'],
+      }, agentDir);
+      // Exact match with instance path — should appear (may be duplicated, that's fine)
+      expect(result.allowedPaths.filter(p => p === '/home/user/projects/app').length).toBeGreaterThanOrEqual(1);
     } finally {
       fs.rmSync(agentDir, { recursive: true, force: true });
     }

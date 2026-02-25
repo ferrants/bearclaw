@@ -89,7 +89,7 @@ export function mergeSecurityConfig(
     allowedCommands: [...ALLOWED_COMMANDS],
     restrictedCommands: { ...RESTRICTED_COMMANDS },
     forbiddenPaths: [...instanceSecurity.forbiddenPaths],
-    allowedPaths: [],
+    allowedPaths: [...(instanceSecurity.allowedPaths ?? [])],
     allowSubshells: false,
     rateLimits: { ...instanceSecurity.rateLimits },
     encrypt: instanceSecurity.encrypt,
@@ -123,12 +123,20 @@ export function mergeSecurityConfig(
   // Agent's own forbidden paths are already in instance. Agent can only add.
   // No agent-level forbiddenPaths field — it's instance-only.
 
-  // allowedPaths: agent can add paths within its directory tree
+  // allowedPaths: agent can add paths under its own directory OR under
+  // any instance-level allowedPath (agent can't grant itself access to
+  // arbitrary paths — only paths the instance admin already approved).
   if (agentSecurity.allowedPaths) {
     const resolvedAgentDir = path.resolve(agentDir);
+    const instanceAllowed = (instanceSecurity.allowedPaths ?? []).map(p =>
+      p.startsWith('~/') ? path.join(os.homedir(), p.slice(2)) : p
+    );
     const validPaths = agentSecurity.allowedPaths
       .map(p => p.startsWith('~/') ? path.join(os.homedir(), p.slice(2)) : path.resolve(agentDir, p))
-      .filter(p => p.startsWith(resolvedAgentDir));
+      .filter(p =>
+        p.startsWith(resolvedAgentDir + path.sep) || p === resolvedAgentDir ||
+        instanceAllowed.some(ia => p === ia || p.startsWith(ia + path.sep))
+      );
     base.allowedPaths = [...base.allowedPaths, ...validPaths];
   }
 

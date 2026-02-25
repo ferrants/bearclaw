@@ -11,7 +11,10 @@ export interface ClientMessage_ApprovalResponse {
   type: 'approval_response';
   requestId: string;
   approved: boolean;
-  allow?: 'once' | 'session' | 'day';
+  allow?: 'once' | 'session' | 'day' | 'always';
+  deny?: 'always';
+  reject?: boolean;
+  feedback?: string;
 }
 
 export interface ClientMessage_QueryMentionables {
@@ -35,12 +38,33 @@ export interface ClientMessage_GetChatHistory {
   channel?: string;
 }
 
+export interface ClientMessage_ListPendingApprovals {
+  type: 'list_pending_approvals';
+  id: string;
+  chatId?: string;
+  agentId?: string;
+}
+
+export interface ClientMessage_ListUserRules {
+  type: 'list_user_rules';
+  id: string;
+}
+
+export interface ClientMessage_RemoveUserRule {
+  type: 'remove_user_rule';
+  id: string;
+  ruleId: string;
+}
+
 export type ClientMessage =
   | ClientMessage_Message
   | ClientMessage_ApprovalResponse
   | ClientMessage_QueryMentionables
   | ClientMessage_ListChats
-  | ClientMessage_GetChatHistory;
+  | ClientMessage_GetChatHistory
+  | ClientMessage_ListPendingApprovals
+  | ClientMessage_ListUserRules
+  | ClientMessage_RemoveUserRule;
 
 // Server → Client messages
 export interface ServerMessage_Token {
@@ -108,6 +132,7 @@ export interface ServerMessage_CommandResult {
   chatId: string;
   command: string;
   message: string;
+  newChatId?: string;
 }
 
 export interface ServerMessage_ScheduleTriggered {
@@ -141,6 +166,39 @@ export interface ServerMessage_ChatHistory {
   }>;
 }
 
+export interface ServerMessage_PendingApprovals {
+  type: 'pending_approvals';
+  id: string;
+  approvals: Array<{
+    requestId: string;
+    toolName: string;
+    args: Record<string, unknown>;
+    agentId: string;
+    chatId: string;
+    createdAt: number;
+  }>;
+}
+
+export interface ServerMessage_UserRules {
+  type: 'user_rules';
+  id: string;
+  rules: Array<{
+    id: string;
+    action: 'allow' | 'deny';
+    toolName: string;
+    agentId?: string;
+    createdAt: string;
+    createdBy: 'ws-approval' | 'cli';
+  }>;
+}
+
+export interface ServerMessage_UserRuleRemoved {
+  type: 'user_rule_removed';
+  id: string;
+  ruleId: string;
+  success: boolean;
+}
+
 export interface ServerMessage_Error {
   type: 'error';
   id?: string;
@@ -160,6 +218,9 @@ export type ServerMessage =
   | ServerMessage_ScheduleTriggered
   | ServerMessage_ChatList
   | ServerMessage_ChatHistory
+  | ServerMessage_PendingApprovals
+  | ServerMessage_UserRules
+  | ServerMessage_UserRuleRemoved
   | ServerMessage_Error;
 
 export interface Mentionable {

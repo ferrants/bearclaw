@@ -16,20 +16,28 @@ export class SecurityPolicy {
     public readonly allowSubshells: boolean = false,
   ) {}
 
+  /** Expand leading ~ to home directory. */
+  expandPath(rawPath: string): string {
+    if (rawPath === '~') return os.homedir();
+    if (rawPath.startsWith('~/')) return path.join(os.homedir(), rawPath.slice(2));
+    return rawPath;
+  }
+
   isPathAllowed(rawPath: string): boolean {
     if (rawPath.includes('\0')) return false;
 
-    const normalized = path.normalize(rawPath);
+    const expanded = this.expandPath(rawPath);
+    const normalized = path.normalize(expanded);
     if (normalized.startsWith('..')) return false;
 
-    if (this.workspaceOnly && path.isAbsolute(rawPath)) {
+    if (this.workspaceOnly && path.isAbsolute(expanded)) {
       const underAllowed = this.allowedPaths.some(
         ap => normalized === ap || normalized.startsWith(ap + path.sep)
       );
       if (!underAllowed) return false;
     }
 
-    const resolved = path.resolve(this.workspaceDir, rawPath);
+    const resolved = path.resolve(this.workspaceDir, expanded);
     const expandedForbidden = this.forbiddenPaths.map(p =>
       p.startsWith('~') ? p.replace('~', os.homedir()) : p
     );
