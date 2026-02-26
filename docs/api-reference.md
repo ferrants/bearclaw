@@ -41,7 +41,6 @@ interface BearClawConfig {
   };
   channels: {
     enabled: string[];
-    telegram?: { botToken: string; allowFrom?: string[] };
   };
   mcp: { servers: Record<string, McpServerConfig> };
   agents: Record<string, AgentConfig>;

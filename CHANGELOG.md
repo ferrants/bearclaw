@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Monorepo workspace layout under `packages/`
+- Added Exa web search tool (`web_search_exa`)
+- Removed built-in Telegram channel (use WebSocket/gateway clients instead)
+- Tool count increased to 10
+
 ## 0.1.0
 
 Initial release.
@@ -11,7 +18,7 @@ Initial release.
 - Tool system with 9 built-in tools, JSON Schema validation, and hook pipeline
 - Agent loop with parallel tool execution and streaming
 - Message bus with async waiter pattern
-- Channels: CLI REPL, Telegram
+- Channels: CLI REPL
 - Multi-agent orchestration: routing, mentions, conversations, teams
 - HTTP gateway with pairing-based authentication
 - Session persistence and memory system

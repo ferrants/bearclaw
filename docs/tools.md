@@ -1,6 +1,6 @@
 # Tools
 
-BearClaw provides a tool system with 9 built-in tools, user-defined skill tools (script-based and MCP), JSON Schema validation, and a hook pipeline for policy enforcement and extensibility.
+BearClaw provides a tool system with 10 built-in tools, user-defined skill tools (script-based and MCP), JSON Schema validation, and a hook pipeline for policy enforcement and extensibility.
 
 ## Tool Result Types
 
@@ -101,6 +101,20 @@ Fetch content from a URL.
 
 HTML responses are stripped to plain text. Content is truncated at 50,000 characters. Rate limit checked.
 
+### web_search_exa
+
+Search the web via Exa's free MCP endpoint.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `query` | string | yes | Search query |
+| `numResults` | number | no | Number of results (default: 8) |
+| `type` | string | no | `"auto"`, `"fast"`, or `"deep"` (default: `"auto"`) |
+| `livecrawl` | string | no | `"fallback"` or `"preferred"` (default: `"fallback"`) |
+| `contextMaxCharacters` | number | no | Max characters per result context (default: 10,000) |
+
+Results are returned as a plain-text summary. Content is truncated at 50,000 characters. Rate limit checked.
+
 ### spawn
 
 Spawn a subagent to handle a task.
@@ -121,7 +135,7 @@ Send a message to a specific channel and chat.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `channel` | string | yes | Target channel (e.g., `"telegram"`) |
+| `channel` | string | yes | Target channel (e.g., `"gateway"`) |
 | `chatId` | string | yes | Target chat ID |
 | `content` | string | yes | Message content |
 

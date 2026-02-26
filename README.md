@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="img/bearclaw_logo.png" alt="BearClaw" width="400">
+  <img src="packages/bearclaw/img/bearclaw_logo.png" alt="BearClaw" width="400">
 </p>
 
 <p align="center">
@@ -25,14 +25,14 @@
 - **Encrypted secrets** — API keys encrypted at rest with ChaCha20-Poly1305 (via `@noble/ciphers`), automatic encrypt-on-startup
 - **Multi-provider LLM abstraction** — Anthropic, OpenAI, Ollama, and CLI Delegation (claude, codex, etc.) with streaming support and exponential backoff retry
 - **Multi-agent orchestration** — Team-based routing, `[@agent: message]` mention parsing, conversation tracking with fan-out/fan-in pattern
-- **Multi-channel messaging** — CLI REPL and Telegram with a unified message bus
+- **Multi-channel messaging** — CLI REPL and HTTP gateway with a unified message bus
 - **Skills system** — Drop a `SKILL.md` into `skills/` and BearClaw picks it up automatically. Follows the [Agent Skills spec](https://agentskills.io/specification.md) — the same skill files work in Claude Code and other compatible tools. Multi-source loading with workspace precedence over user-level skills. All skills available as `/skill-name` slash commands in the CLI.
 - **MCP support** — Configure MCP servers in `config.json` and their tools are discovered and registered automatically via JSON-RPC 2.0 over stdio.
 - **Headless mode** — Run one-shot prompts with `bearclaw -p "your prompt"` for scripting and automation.
-- **Tool system** — 9 built-in tools with JSON Schema validation, before/after hooks, parallel execution, and structured results (forLLM/forUser/silent/async)
+- **Tool system** — 10 built-in tools with JSON Schema validation, before/after hooks, parallel execution, and structured results (forLLM/forUser/silent/async)
 - **HTTP gateway** — Pairing-based authentication with CSPRNG codes, SHA-256 token verification, and brute-force lockout
 - **Session persistence** — Conversations saved as JSON, memory as markdown files
-- **Zero SDK dependencies** — All provider integrations use `fetch()` directly. Only 2 runtime dependencies total.
+- **Zero SDK dependencies** — All provider integrations use `fetch()` directly. Only 1 runtime dependency total.
 
 ## Installation
 
@@ -47,9 +47,9 @@ npm install -g bearclaw
 ```bash
 git clone https://github.com/ferrants/bearclaw.git
 cd bearclaw
-npm install
-npm run build
-npm link
+pnpm install
+pnpm -C packages/bearclaw build
+pnpm -C packages/bearclaw link --global
 ```
 
 Requires Node.js 20+.
@@ -101,17 +101,15 @@ Runs a single prompt, prints the response, and exits. Useful for scripting and a
 bearclaw-daemon
 ```
 
-The daemon supports multiple channels (CLI, Telegram), multi-agent routing, team orchestration, and the HTTP gateway.
+The daemon supports multiple channels (CLI + gateway), multi-agent routing, team orchestration, and the HTTP gateway.
 
 ### 5. Terminal UI
 
-For a full terminal interface with streaming responses, tool call visibility, and approval workflows, see [BearClaw TUI](https://github.com/ferrants/bearclaw-tui). It connects to the daemon over WebSocket.
+For a full terminal interface with streaming responses, tool call visibility, and approval workflows, see [BearClaw TUI](https://github.com/ferrants/bearclaw-tui). It connects to the daemon over WebSocket and requires Bun at runtime.
 
 ```bash
-git clone https://github.com/ferrants/bearclaw-tui.git
-cd bearclaw-tui
-bun install
-bun start
+pnpm -C packages/bearclaw-tui install
+pnpm -C packages/bearclaw-tui dev
 ```
 
 ## Configuration
@@ -201,11 +199,7 @@ Autonomy levels: `locked` (no tool use), `supervised` (all tools need approval),
 ```json
 {
   "channels": {
-    "enabled": ["cli", "telegram"],
-    "telegram": {
-      "botToken": "123456:ABC...",
-      "allowFrom": ["your_username_or_numeric_id"]
-    }
+    "enabled": ["cli"]
   }
 }
 ```
@@ -222,20 +216,23 @@ BEARCLAW_CONFIG_DIR=~/.bearclaw-personal bearclaw
 ## Architecture
 
 ```
-src/
-├── config/          Config schema, defaults, loader
-├── security/        Policy, rate limiter, secrets, SSRF, approvals, pairing
-├── providers/       Anthropic, OpenAI, Ollama, CLI Delegation
-├── tools/           Registry, hooks, validation, 9 built-in tools
-├── skills/          Skill loader (Claude Code compatible)
-├── mcp/             MCP client, tool discovery
-├── agent/           Loop, context builder, session persistence
-├── bus/             Message bus with async waiter pattern
-├── channels/        CLI, Telegram
-├── orchestrator/    Router, mentions, conversations, teams
-├── gateway/         HTTP server with pairing auth
-├── index.ts         CLI entry point
-└── daemon.ts        Daemon entry point
+packages/
+└── bearclaw/
+    ├── src/
+    │   ├── config/          Config schema, defaults, loader
+    │   ├── security/        Policy, rate limiter, secrets, SSRF, approvals, pairing
+    │   ├── providers/       Anthropic, OpenAI, Ollama, CLI Delegation
+    │   ├── tools/           Registry, hooks, validation, 10 built-in tools
+    │   ├── skills/          Skill loader (Claude Code compatible)
+    │   ├── mcp/             MCP client, tool discovery
+    │   ├── agent/           Loop, context builder, session persistence
+    │   ├── bus/             Message bus with async waiter pattern
+    │   ├── channels/        CLI channel(s)
+    │   ├── orchestrator/    Router, mentions, conversations, teams
+    │   ├── gateway/         HTTP server with pairing auth
+    │   ├── index.ts         CLI entry point
+    │   └── daemon.ts        Daemon entry point
+    └── tests/
 ```
 
 ### How it works

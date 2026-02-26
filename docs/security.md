@@ -62,6 +62,7 @@ Shell commands go through a multi-step validation:
 5. **Per-command checks**:
    - Skip env assignments (e.g., `FOO=bar command`)
    - Extract base command (strip path prefix)
+   - If `workspaceOnly` is true, block path arguments outside workspace/allowed paths (best-effort)
    - Check restricted commands first (allowed but with blocked args)
    - Check against allowlist
 
@@ -69,12 +70,11 @@ Shell commands go through a multi-step validation:
 
 Default allowlist:
 ```
-git, npm, npx, node, cargo, go, python, python3, pip,
-ls, cat, grep, find, echo, pwd, wc, head, tail,
+git, ls, cat, grep, find, echo, pwd, wc, head, tail,
 sort, uniq, diff, date, which, mkdir, cp, mv, touch, chmod
 ```
 
-Intentionally excluded: `curl`, `wget`, `env` (security sensitive).
+Intentionally excluded from the allowlist (but permitted via restrictions): `curl`, `wget`. `env` is not allowed.
 
 ### Restricted Commands
 
@@ -85,6 +85,8 @@ Some commands are allowed but with argument restrictions:
 | `curl` | `-o`, `--output`, `-O`, `-T`, `--upload-file` |
 | `wget` | `-O`, `--output-document` |
 | `tee` | `*` (entirely blocked in supervised mode) |
+| `find` | `-exec`, `-ok`, `-execdir`, `-okdir` |
+| `git` | write/danger subcommands (`commit`, `push`, `reset`, `checkout`, etc.) |
 
 ### Forbidden Paths
 
@@ -288,7 +290,6 @@ API keys and bot tokens are encrypted at rest using ChaCha20-Poly1305 AEAD via `
 
 - `providers.anthropic.apiKey`
 - `providers.openai.apiKey`
-- `channels.telegram.botToken`
 - `gateway.apiKeys[].key` (static API keys)
 
 ### Manual Handling

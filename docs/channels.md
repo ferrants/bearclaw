@@ -41,48 +41,9 @@ Built-in commands:
 
 All other input is published as an `InboundMessage` to the message bus.
 
-## Telegram Channel
+## External Channels
 
-The Telegram channel connects BearClaw to a Telegram bot.
-
-### Configuration
-
-```json
-{
-  "channels": {
-    "enabled": ["cli", "telegram"],
-    "telegram": {
-      "botToken": "123456:ABC-DEF...",
-      "allowFrom": ["your_username", "another_user"]
-    }
-  }
-}
-```
-
-| Field | Type | Description |
-|---|---|---|
-| `botToken` | string | Telegram Bot API token (encrypted at rest) |
-| `allowFrom` | string[] | Usernames allowed to interact with the bot |
-
-### Getting a Bot Token
-
-1. Message [@BotFather](https://t.me/botfather) on Telegram
-2. Send `/newbot` and follow the prompts
-3. Copy the token into your config
-
-### Sender Allowlist
-
-Only messages from usernames listed in `allowFrom` are processed. Messages from other users are silently ignored. This prevents unauthorized access to your agents.
-
-### Features
-
-- Messages from allowed users are published to the message bus as `InboundMessage`
-- Agent responses are sent back to the same chat
-- Supports `reply_to_message_id` for threaded replies
-
-### Bot Token Security
-
-The bot token is encrypted at rest using the same ChaCha20-Poly1305 encryption as API keys. Put the plaintext token in your config and BearClaw will encrypt it on first startup.
+BearClaw's built-in daemon channels are intentionally minimal. For external chat platforms, build a wrapper that connects to the daemon over WebSocket and forwards messages in and out. This keeps core security and approvals centralized in the gateway.
 
 ## Message Bus
 

@@ -237,11 +237,7 @@ See [Multi-Agent](multi-agent.md) for routing and orchestration details.
 ```json
 {
   "channels": {
-    "enabled": ["cli", "telegram"],
-    "telegram": {
-      "botToken": "123456:ABC...",
-      "allowFrom": ["your_username"]
-    }
+    "enabled": ["cli"]
   }
 }
 ```
@@ -249,8 +245,6 @@ See [Multi-Agent](multi-agent.md) for routing and orchestration details.
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `enabled` | string[] | `["cli"]` | Active channels |
-| `telegram.botToken` | string | — | Telegram bot token (encrypted at rest) |
-| `telegram.allowFrom` | string[] | — | Allowed sender usernames |
 
 See [Channels](channels.md) for details.
 

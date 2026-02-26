@@ -1,0 +1,32 @@
+{
+  "name": "bearclaw-tui",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node bin/bearclaw-tui.js",
+    "dev": "bun --watch run src/index.tsx",
+    "prepublishOnly": "pnpm run build"
+  },
+  "bin": {
+    "bearclaw-tui": "bin/bearclaw-tui.js"
+  },
+  "files": [
+    "bin",
+    "dist",
+    "package.json",
+    "README.md"
+  ],
+  "dependencies": {
+    "@bearclaw/shared": "workspace:*",
+    "@opentui/core": "^0.1.80",
+    "@opentui/react": "^0.1.80",
+    "react": "^19.2.4"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.2.14",
+    "@types/bun": "latest"
+  }
+}

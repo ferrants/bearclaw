@@ -6,3 +6,4 @@ dist/
 .secret_key
 paired-tokens.json
 coverage/
+packages/bearclaw-tui/debug.log

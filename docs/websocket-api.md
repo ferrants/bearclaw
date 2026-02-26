@@ -144,7 +144,7 @@ Returns all stored chat sessions across all agents.
 | Field | Required | Description |
 |-------|----------|-------------|
 | `id` | yes | Client-generated request ID (returned in response) |
-| `channel` | no | Filter by channel (`cli`, `websocket`, `telegram`, `scheduler`, `gateway`) |
+| `channel` | no | Filter by channel (`cli`, `websocket`, `scheduler`, `gateway`) |
 | `agentId` | no | Filter by agent ID |
 
 ### `get_chat_history` — Load chat history

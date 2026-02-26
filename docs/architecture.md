@@ -36,7 +36,6 @@ All LLM providers use `fetch()` directly. This eliminates heavy SDK dependencies
 
 The only runtime dependencies are:
 - `@noble/ciphers` — Pure JavaScript ChaCha20-Poly1305 encryption
-- `node-telegram-bot-api` — Telegram Bot API client
 
 ## Directory Structure
 
@@ -110,7 +109,6 @@ bearclaw/
     channels/
       types.ts                        # Channel interface
       cli.ts                          # stdin/stdout REPL
-      telegram.ts                     # Telegram bot
 
     orchestrator/
       conversation.ts                 # Pending counter, fan-out/fan-in, reaper
@@ -152,7 +150,7 @@ User Input → Inline Allow Parsing → Agent Loop → LLM
 ### Daemon Mode
 
 ```
-Channel (CLI/Telegram)
+Channel (CLI)
     │
     ▼
 Message Bus (inbound queue)
