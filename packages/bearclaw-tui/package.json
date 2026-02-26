@@ -1,6 +1,6 @@
 {
   "name": "bearclaw-tui",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "type": "module",
   "scripts": {
     "build": "bun build src/index.tsx --outdir dist --target bun",

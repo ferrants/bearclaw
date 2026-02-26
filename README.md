@@ -105,7 +105,7 @@ The daemon supports multiple channels (CLI + gateway), multi-agent routing, team
 
 ### 5. Terminal UI
 
-For a full terminal interface with streaming responses, tool call visibility, and approval workflows, see [BearClaw TUI](https://github.com/ferrants/bearclaw-tui). It connects to the daemon over WebSocket and requires Bun at runtime.
+For a full terminal interface with streaming responses, tool call visibility, and approval workflows, see [BearClaw TUI](https://github.com/ferrants/bearclaw/tree/main/packages/bearclaw-tui). It connects to the daemon over WebSocket and requires Bun at runtime.
 
 ```bash
 pnpm -C packages/bearclaw-tui install

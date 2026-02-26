@@ -16,10 +16,18 @@ Terminal user interface for the [BearClaw](https://github.com/ferrants/bearclaw)
 
 Requires [Bun](https://bun.sh) and a running [BearClaw daemon](https://github.com/ferrants/bearclaw).
 
+### In This Monorepo
+
+From the repo root:
+
 ```bash
-git clone https://github.com/ferrants/bearclaw-tui.git
-cd bearclaw-tui
-bun install
+pnpm -C packages/bearclaw-tui install
+```
+
+### Via npx (published package)
+
+```bash
+npx bearclaw-tui
 ```
 
 ## Quick Start
@@ -31,7 +39,9 @@ Add a static API key to your BearClaw daemon config (`~/.bearclaw/config.json`):
 ```json
 {
   "gateway": {
-    "apiKeys": ["your-api-key"]
+    "apiKeys": [
+      { "label": "tui", "key": "your-api-key" }
+    ]
   }
 }
 ```
@@ -49,13 +59,13 @@ Or enter it interactively on first launch — it gets saved to `~/.bearclaw-tui-
 ### 3. Start the TUI
 
 ```bash
-bun start
+pnpm -C packages/bearclaw-tui dev
 ```
 
 The TUI connects to the daemon at `ws://localhost:3000` by default. Override with:
 
 ```bash
-BEARCLAW_URL=ws://localhost:3014 bun start
+BEARCLAW_URL=ws://localhost:3014 pnpm -C packages/bearclaw-tui dev
 ```
 
 ## Usage
@@ -92,8 +102,8 @@ All configuration is via environment variables (or `.env` file):
 ## Development
 
 ```bash
-bun run dev     # Run with --watch for auto-reload
-bun start       # Run normally
+pnpm -C packages/bearclaw-tui dev     # Run with --watch for auto-reload
+pnpm -C packages/bearclaw-tui start   # Run normally (runs the published CLI wrapper)
 ```
 
 Built with [OpenTUI](https://github.com/anomalyco/opentui) (React reconciler) and Bun.
