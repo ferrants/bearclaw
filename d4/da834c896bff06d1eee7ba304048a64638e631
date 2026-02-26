@@ -1,0 +1,153 @@
+packages/bearclaw-tui/CLAUDE.md
+  a9659d9ed6556ad1 1-106
+packages/bearclaw-tui/src/components/dashboard/Dashboard.tsx
+  a9659d9ed6556ad1 1-297
+packages/bearclaw-tui/src/components/MessageHistory.tsx
+  a9659d9ed6556ad1 1-88
+packages/bearclaw-tui/src/index.tsx
+  a9659d9ed6556ad1 1-10
+packages/bearclaw/tests/tools/exec.test.ts
+  a9659d9ed6556ad1 56-67
+packages/bearclaw-tui/LICENSE
+  a9659d9ed6556ad1 3
+packages/bearclaw/src/tools/builtin/search.ts
+  a9659d9ed6556ad1 41-43
+docs/websocket-api.md
+  a9659d9ed6556ad1 147
+packages/bearclaw/tests/agent/session.test.ts
+  a9659d9ed6556ad1 50
+packages/shared/src/index.ts
+  a9659d9ed6556ad1 1
+packages/bearclaw-tui/tsconfig.json
+  a9659d9ed6556ad1 15-17,20
+packages/shared/package.json
+  a9659d9ed6556ad1 1-22
+docs/configuration.md
+  a9659d9ed6556ad1 240
+packages/bearclaw/src/daemon.ts
+  a9659d9ed6556ad1 28,56,199,244,530
+packages/bearclaw-tui/src/components/ApprovalPrompt.tsx
+  a9659d9ed6556ad1 1-105
+packages/bearclaw/src/gateway/ws-protocol.ts
+  a9659d9ed6556ad1 1
+packages/bearclaw/src/index.ts
+  a9659d9ed6556ad1 29,274,344
+packages/bearclaw/src/config/docs.ts
+  a9659d9ed6556ad1 190
+packages/bearclaw-tui/run.sh
+  a9659d9ed6556ad1 1-3
+packages/bearclaw-tui/src/components/dashboard/BarGraph.tsx
+  a9659d9ed6556ad1 1-44
+packages/bearclaw-tui/package.json
+  a9659d9ed6556ad1 1-32
+packages/bearclaw-tui/src/components/dashboard/HorizontalBar.tsx
+  a9659d9ed6556ad1 1-33
+packages/bearclaw/src/config/defaults.ts
+  a9659d9ed6556ad1 2,12-18
+packages/bearclaw/ARCHITECTURE.md
+  a9659d9ed6556ad1 1-135
+packages/shared/tsconfig.json
+  a9659d9ed6556ad1 18
+README.md
+  a9659d9ed6556ad1 2,28,32,35,50-52,104,108,111-112,202,219-235
+docs/tools.md
+  a9659d9ed6556ad1 3,104-117,138
+packages/bearclaw-tui/src/cli.ts
+  a9659d9ed6556ad1 1
+packages/bearclaw/SECURITY_AUDIT.md
+  a9659d9ed6556ad1 1-147
+packages/bearclaw-tui/src/components/SlashMenu.tsx
+  a9659d9ed6556ad1 1-57
+packages/bearclaw-tui/src/types.ts
+  a9659d9ed6556ad1 1-42
+packages/bearclaw/src/gateway/ws-handler.ts
+  a9659d9ed6556ad1 19
+packages/bearclaw-tui/bin/bearclaw-tui.js
+  a9659d9ed6556ad1 1-18
+CHANGELOG.md
+  a9659d9ed6556ad1 3-9,21
+package.json
+  a9659d9ed6556ad1 2-4,6-9
+packages/bearclaw/src/gateway/mentionables.ts
+  a9659d9ed6556ad1 4
+packages/bearclaw-tui/src/components/dashboard/SparklineGraph.tsx
+  a9659d9ed6556ad1 1-133
+packages/bearclaw-tui/scripts/ws-sniff.ts
+  a9659d9ed6556ad1 1-69
+packages/bearclaw-tui/src/components/SessionList.tsx
+  a9659d9ed6556ad1 1-140
+packages/bearclaw-tui/src/lib/log.ts
+  a9659d9ed6556ad1 1-10
+packages/bearclaw-tui/src/lib/theme.ts
+  a9659d9ed6556ad1 1-177
+packages/bearclaw/src/agent/session.ts
+  a9659d9ed6556ad1 6
+packages/bearclaw/src/tools/builtin/message.ts
+  a9659d9ed6556ad1 25
+docs/security.md
+  a9659d9ed6556ad1 65,73,77,88-89
+packages/bearclaw-tui/src/components/ChatInput.tsx
+  a9659d9ed6556ad1 1-35
+packages/bearclaw-tui/src/hooks/useWebSocket.ts
+  a9659d9ed6556ad1 1-92
+packages/bearclaw-tui/src/App.tsx
+  a9659d9ed6556ad1 1-565
+packages/bearclaw-tui/src/components/StatusBar.tsx
+  a9659d9ed6556ad1 1-44
+CONTRIBUTING.md
+  a9659d9ed6556ad1 10,16-18,23-26,40
+docs/architecture.md
+  a9659d9ed6556ad1 153
+packages/bearclaw/TOOL_CALLING.md
+  a9659d9ed6556ad1 1-415
+packages/bearclaw-tui/README.md
+  a9659d9ed6556ad1 1-103
+packages/bearclaw/CLAUDE.md
+  a9659d9ed6556ad1 37,45
+packages/bearclaw/plans/tui-dashboard-data.md
+  a9659d9ed6556ad1 1-141
+packages/bearclaw/src/tools/builtin/edit-file.ts
+  a9659d9ed6556ad1 34-36
+packages/bearclaw/src/security/policy.ts
+  a9659d9ed6556ad1 143-147,178-220
+packages/bearclaw/src/tools/builtin/list-dir.ts
+  a9659d9ed6556ad1 26-28
+docs/channels.md
+  a9659d9ed6556ad1 44,46
+packages/bearclaw/package.json
+  a9659d9ed6556ad1 1-59
+packages/bearclaw-tui/src/hooks/useDashboardData.ts
+  a9659d9ed6556ad1 1-267
+packages/bearclaw-tui/src/components/ApiKeyScreen.tsx
+  a9659d9ed6556ad1 1-41
+packages/bearclaw/src/tools/builtin/web-search-exa.ts
+  a9659d9ed6556ad1 1-94
+packages/bearclaw-tui/src/lib/tokenStore.ts
+  a9659d9ed6556ad1 1-22
+packages/bearclaw/src/gateway/stats-collector.ts
+  a9659d9ed6556ad1 4
+packages/bearclaw-tui/scripts/ws-query.ts
+  a9659d9ed6556ad1 1-71
+packages/bearclaw-tui/src/hooks/useChatState.ts
+  a9659d9ed6556ad1 1-342
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.5",
+  "base_commit_sha": "d4da834c896bff06d1eee7ba304048a64638e631",
+  "prompts": {
+    "a9659d9ed6556ad1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019c9802-ebe4-7a93-9670-0c12c92be84e",
+        "model": "gpt-5.2-codex"
+      },
+      "human_author": "Matt Ferrante <matt@heyferrante.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 4141,
+      "overriden_lines": 0
+    }
+  }
+}
