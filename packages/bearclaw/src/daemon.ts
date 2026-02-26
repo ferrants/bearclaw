@@ -53,7 +53,7 @@ import { MentionablesProvider } from './gateway/mentionables.js';
 import { Scheduler } from './scheduler/index.js';
 import { parseSlashCommand } from './commands/slash.js';
 import { handleConfig, handleNew, handleSkill } from './commands/handlers.js';
-import type { ServerMessage_CommandResult } from '@bearclaw/shared/ws-protocol';
+import type { ServerMessage_CommandResult } from './gateway/ws-protocol.js';
 import { UserRuleStore } from './security/user-rules.js';
 import { AgentRegistry } from './config/agent-registry.js';
 import { loadAgentDirConfig, buildResolvedConfig } from './config/agent-loader.js';

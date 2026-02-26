@@ -16,7 +16,7 @@ import type {
   ClientMessage_RemoveUserRule,
   ClientMessage_GetStats,
   ServerMessage,
-} from '@bearclaw/shared/ws-protocol';
+} from './ws-protocol.js';
 import type { StatsCollector } from './stats-collector.js';
 import type { InlineAllowScope } from '../config/schema.js';
 import type { ChatInfo } from '../agent/session.js';

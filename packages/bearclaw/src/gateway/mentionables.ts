@@ -1,7 +1,7 @@
 import type { AgentConfig, TeamConfig } from '../config/schema.js';
 import type { SkillDef } from '../skills/types.js';
 import type { ToolRegistry } from '../tools/types.js';
-import type { Mentionable } from '@bearclaw/shared/ws-protocol';
+import type { Mentionable } from './ws-protocol.js';
 
 export class MentionablesProvider {
   constructor(

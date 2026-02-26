@@ -2,7 +2,7 @@ import type {
   ClientMessage,
   ServerMessage,
   Mentionable as WsMentionable,
-} from "@bearclaw/shared/ws-protocol"
+} from "./ws-protocol"
 
 export interface Message {
   id: string

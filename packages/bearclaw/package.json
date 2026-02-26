@@ -44,7 +44,6 @@
     "security"
   ],
   "dependencies": {
-    "@bearclaw/shared": "workspace:*",
     "@noble/ciphers": "^1.0.0"
   },
   "devDependencies": {

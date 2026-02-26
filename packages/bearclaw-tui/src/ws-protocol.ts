@@ -1,3 +1,4 @@
+// NOTE: Keep in sync with packages/bearclaw/src/gateway/ws-protocol.ts
 // Client → Server messages
 export interface ClientMessage_Message {
   type: 'message';

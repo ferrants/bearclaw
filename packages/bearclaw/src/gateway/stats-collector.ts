@@ -1,7 +1,7 @@
 import type { EventBus } from '../events.js';
 import type { SessionProvider } from './ws-handler.js';
 import type { ApprovalBridge } from './approval-bridge.js';
-import type { ServerMessage_Stats } from '@bearclaw/shared/ws-protocol';
+import type { ServerMessage_Stats } from './ws-protocol.js';
 
 interface AgentState {
   status: 'idle' | 'thinking' | 'tool_use';
