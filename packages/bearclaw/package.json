@@ -1,6 +1,6 @@
 {
   "name": "bearclaw",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "AI agent framework with defense-in-depth security, multi-agent orchestration, and provider abstraction",
   "type": "module",
   "main": "dist/index.js",
