@@ -1,9 +1,9 @@
 {
   "name": "bearclaw-tui",
-  "version": "0.1.0",
+  "version": "0.1.5",
   "type": "module",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "bun build src/index.tsx --outdir dist --target bun",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "start": "node bin/bearclaw-tui.js",
     "dev": "bun --watch run src/index.tsx",
@@ -15,6 +15,7 @@
   "files": [
     "bin",
     "dist",
+    "src",
     "package.json",
     "README.md"
   ],
