@@ -4,6 +4,8 @@ import { AutonomyLevel } from '../config/schema.js';
 import { type ScopedRateLimiter } from './rate-limiter.js';
 
 export class SecurityPolicy {
+  public readonly baseDir: string;
+
   constructor(
     public readonly autonomy: AutonomyLevel,
     public readonly workspaceDir: string,
@@ -14,7 +16,12 @@ export class SecurityPolicy {
     public readonly allowedPaths: string[],
     private readonly rateLimiter: ScopedRateLimiter,
     public readonly allowSubshells: boolean = false,
-  ) {}
+    agentDir?: string,
+  ) {
+    // Resolve relative paths against the agent directory (parent of workspace)
+    // so that sibling dirs like memory/ are reachable with relative paths.
+    this.baseDir = agentDir ?? workspaceDir;
+  }
 
   /** Expand leading ~ to home directory. */
   expandPath(rawPath: string): string {
@@ -37,7 +44,7 @@ export class SecurityPolicy {
       if (!underAllowed) return false;
     }
 
-    const resolved = path.resolve(this.workspaceDir, expanded);
+    const resolved = path.resolve(this.baseDir, expanded);
     const expandedForbidden = this.forbiddenPaths.map(p =>
       p.startsWith('~') ? p.replace('~', os.homedir()) : p
     );

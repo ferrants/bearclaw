@@ -113,6 +113,58 @@ describe('AnthropicProvider', () => {
     expect(result.usage?.totalTokens).toBe(70);
   });
 
+  it('parses cache tokens from usage', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        content: [{ type: 'text', text: 'cached response' }],
+        stop_reason: 'end_turn',
+        usage: {
+          input_tokens: 100,
+          output_tokens: 20,
+          cache_read_input_tokens: 80,
+          cache_creation_input_tokens: 15,
+        },
+      }),
+    });
+    vi.stubGlobal('fetch', mockFetch);
+
+    const provider = new AnthropicProvider('test-key');
+    const result = await provider.chat(
+      [{ role: 'user', content: 'hi' }], [], 'claude-sonnet-4-5-20250929',
+    );
+
+    expect(result.usage?.cacheReadTokens).toBe(80);
+    expect(result.usage?.cacheWriteTokens).toBe(15);
+    expect(result.usage?.promptTokens).toBe(100);
+  });
+
+  it('preserves zero cache tokens as defined', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        content: [{ type: 'text', text: 'no cache' }],
+        stop_reason: 'end_turn',
+        usage: {
+          input_tokens: 50,
+          output_tokens: 10,
+          cache_read_input_tokens: 0,
+          cache_creation_input_tokens: 0,
+        },
+      }),
+    });
+    vi.stubGlobal('fetch', mockFetch);
+
+    const provider = new AnthropicProvider('test-key');
+    const result = await provider.chat(
+      [{ role: 'user', content: 'hi' }], [], 'claude-sonnet-4-5-20250929',
+    );
+
+    // With ?? undefined, 0 is preserved (not converted to undefined)
+    expect(result.usage?.cacheReadTokens).toBe(0);
+    expect(result.usage?.cacheWriteTokens).toBe(0);
+  });
+
   it('translates tool results as user messages', async () => {
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,

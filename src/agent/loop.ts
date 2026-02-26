@@ -13,6 +13,7 @@ export interface AgentLoopConfig {
   hooks: ToolHookRegistry;
   maxIterations: number;
   maxTotalTokens?: number;
+  maxContextTokens?: number;
   eventBus?: EventBus;
   agentId?: string;
   chatId?: string;
@@ -24,7 +25,21 @@ export interface AgentLoopResult {
   iterations: number;
   toolsUsed: Array<{ name: string; result: ToolResult }>;
   totalTokens: number;
+  usage: {
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadTokens?: number;
+    cacheWriteTokens?: number;
+  };
 }
+
+const MODEL_CONTEXT_LIMITS: Record<string, number> = {
+  'claude-sonnet-4-5-20250929': 200000,
+  'claude-opus-4-6': 200000,
+  'claude-haiku-4-5-20251001': 200000,
+  'gpt-4o': 128000,
+  'gpt-4-turbo': 128000,
+};
 
 export async function runAgentLoop(
   config: AgentLoopConfig,
@@ -36,15 +51,25 @@ export async function runAgentLoop(
   const evChatId = config.chatId ?? ctx.chatId ?? '';
   let iteration = 0;
   let totalTokens = 0;
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let cacheReadTokens = 0;
+  let cacheWriteTokens = 0;
   const toolsUsed: Array<{ name: string; result: ToolResult }> = [];
+  const maxContextTokens = config.maxContextTokens ?? MODEL_CONTEXT_LIMITS[model] ?? 128000;
 
   while (iteration < maxIterations) {
     iteration++;
 
     // Check token budget
     if (maxTotalTokens && totalTokens >= maxTotalTokens) {
-      return { content: 'Token budget exceeded.', iterations: iteration, toolsUsed, totalTokens };
+      const usage = { inputTokens, outputTokens, cacheReadTokens: cacheReadTokens > 0 ? cacheReadTokens : undefined, cacheWriteTokens: cacheWriteTokens > 0 ? cacheWriteTokens : undefined };
+      return { content: 'Token budget exceeded.', iterations: iteration, toolsUsed, totalTokens, usage };
     }
+
+    // Emit thinking status before LLM call (estimate context size from message content)
+    let contextTokens = Math.ceil(messages.reduce((sum, m) => sum + m.content.length, 0) / 4);
+    eventBus?.emit('agent:status', { agentId: evAgentId, chatId: evChatId, status: 'thinking', contextTokens, maxContextTokens });
 
     // Call LLM
     const toolDefs = tools.toProviderDefs();
@@ -64,16 +89,22 @@ export async function runAgentLoop(
       signal: ctx.signal,
     });
 
-    // Track tokens
+    // Track tokens — use real promptTokens as contextTokens when available
     if (response.usage) {
       totalTokens += response.usage.totalTokens;
+      inputTokens += response.usage.promptTokens;
+      outputTokens += response.usage.completionTokens;
+      cacheReadTokens += response.usage.cacheReadTokens ?? 0;
+      cacheWriteTokens += response.usage.cacheWriteTokens ?? 0;
+      contextTokens = response.usage.promptTokens;
       log.debug('Token usage', { agentId, iteration, tokens: response.usage });
     }
 
     // No tool calls → done
     if (response.toolCalls.length === 0) {
       log.info('Loop complete', { agentId, iteration, reason: response.finishReason, totalTokens, responseLength: response.content.length });
-      return { content: response.content, iterations: iteration, toolsUsed, totalTokens };
+      const usage = { inputTokens, outputTokens, cacheReadTokens: cacheReadTokens > 0 ? cacheReadTokens : undefined, cacheWriteTokens: cacheWriteTokens > 0 ? cacheWriteTokens : undefined };
+      return { content: response.content, iterations: iteration, toolsUsed, totalTokens, usage };
     }
 
     // Log what the LLM wants to do
@@ -86,6 +117,9 @@ export async function runAgentLoop(
       content: response.content,
       toolCalls: response.toolCalls,
     });
+
+    // Emit tool_use status before execution
+    eventBus?.emit('agent:status', { agentId: evAgentId, chatId: evChatId, status: 'tool_use', contextTokens, maxContextTokens });
 
     // Execute tool calls in parallel
     const toolResults = await Promise.all(
@@ -161,14 +195,20 @@ export async function runAgentLoop(
         toolCallId: tc.id,
       });
     }
+
+    // Emit thinking status before next iteration (estimate since we added tool results)
+    const updatedContextTokens = contextTokens + toolResults.reduce((sum, { result }) => sum + Math.ceil(result.forLLM.length / 4), 0);
+    eventBus?.emit('agent:status', { agentId: evAgentId, chatId: evChatId, status: 'thinking', contextTokens: updatedContextTokens, maxContextTokens });
   }
 
   log.warn('Max iterations reached', { agentId: ctx.currentAgentConfig.name, maxIterations, totalTokens });
+  const usage = { inputTokens, outputTokens, cacheReadTokens: cacheReadTokens > 0 ? cacheReadTokens : undefined, cacheWriteTokens: cacheWriteTokens > 0 ? cacheWriteTokens : undefined };
   return {
     content: 'Reached maximum iterations without a final response.',
     iterations: iteration,
     toolsUsed,
     totalTokens,
+    usage,
   };
 }
 

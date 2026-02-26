@@ -30,7 +30,7 @@ export const editFileTool: Tool = {
       return errorResult(`Path not allowed: ${filePath}`);
     }
 
-    const resolved = path.resolve(ctx.policy.workspaceDir, ctx.policy.expandPath(filePath));
+    const resolved = path.resolve(ctx.policy.baseDir, ctx.policy.expandPath(filePath));
 
     try {
       const content = await fs.readFile(resolved, 'utf8');

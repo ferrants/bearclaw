@@ -23,7 +23,7 @@ export const readFileTool: Tool = {
       return errorResult(`Path not allowed: ${filePath}`);
     }
 
-    const resolved = path.resolve(ctx.policy.workspaceDir, ctx.policy.expandPath(filePath));
+    const resolved = path.resolve(ctx.policy.baseDir, ctx.policy.expandPath(filePath));
 
     // Symlink/resolved path validation
     if (!(await ctx.policy.isResolvedPathAllowed(resolved))) {

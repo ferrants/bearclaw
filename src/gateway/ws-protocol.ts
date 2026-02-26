@@ -56,6 +56,11 @@ export interface ClientMessage_RemoveUserRule {
   ruleId: string;
 }
 
+export interface ClientMessage_GetStats {
+  type: 'get_stats';
+  id: string;
+}
+
 export type ClientMessage =
   | ClientMessage_Message
   | ClientMessage_ApprovalResponse
@@ -64,7 +69,8 @@ export type ClientMessage =
   | ClientMessage_GetChatHistory
   | ClientMessage_ListPendingApprovals
   | ClientMessage_ListUserRules
-  | ClientMessage_RemoveUserRule;
+  | ClientMessage_RemoveUserRule
+  | ClientMessage_GetStats;
 
 // Server → Client messages
 export interface ServerMessage_Token {
@@ -199,6 +205,42 @@ export interface ServerMessage_UserRuleRemoved {
   success: boolean;
 }
 
+export interface ServerMessage_AgentStatus {
+  type: 'agent_status';
+  agentId: string;
+  chatId: string;
+  status: 'idle' | 'thinking' | 'tool_use';
+  contextTokens: number;
+  maxContextTokens: number;
+}
+
+export interface ServerMessage_Usage {
+  type: 'usage';
+  agentId: string;
+  chatId: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
+  model: string;
+}
+
+export interface ServerMessage_Stats {
+  type: 'stats';
+  id: string;
+  uptimeSeconds: number;
+  agents: Array<{
+    agentId: string;
+    status: 'idle' | 'thinking' | 'tool_use';
+    activeChatId: string;
+    contextTokens: number;
+    maxContextTokens: number;
+  }>;
+  totalChatCount: number;
+  totalMessages: number;
+  pendingApprovals: number;
+}
+
 export interface ServerMessage_Error {
   type: 'error';
   id?: string;
@@ -221,6 +263,9 @@ export type ServerMessage =
   | ServerMessage_PendingApprovals
   | ServerMessage_UserRules
   | ServerMessage_UserRuleRemoved
+  | ServerMessage_AgentStatus
+  | ServerMessage_Usage
+  | ServerMessage_Stats
   | ServerMessage_Error;
 
 export interface Mentionable {

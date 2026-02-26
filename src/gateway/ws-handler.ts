@@ -14,8 +14,10 @@ import type {
   ClientMessage_ListPendingApprovals,
   ClientMessage_ListUserRules,
   ClientMessage_RemoveUserRule,
+  ClientMessage_GetStats,
   ServerMessage,
 } from './ws-protocol.js';
+import type { StatsCollector } from './stats-collector.js';
 import type { InlineAllowScope } from '../config/schema.js';
 import type { ChatInfo } from '../agent/session.js';
 import type { Message } from '../providers/types.js';
@@ -58,6 +60,7 @@ export class WsHandler {
     private mentionables: MentionablesProvider,
     private onAllow?: OnAllowCallback,
     private userRuleCallbacks?: UserRuleCallbacks,
+    private statsCollector?: StatsCollector,
   ) {
     this.subscribeEvents();
   }
@@ -180,6 +183,9 @@ export class WsHandler {
         break;
       case 'remove_user_rule':
         this.handleRemoveUserRule(conn, msg);
+        break;
+      case 'get_stats':
+        this.handleGetStats(conn, msg);
         break;
       default:
         this.sendTo(conn, {
@@ -343,6 +349,14 @@ export class WsHandler {
     this.sendTo(conn, { type: 'chat_history', id: msg.id, chatId: msg.chatId, agentId, messages: filtered });
   }
 
+  private handleGetStats(conn: WebSocketConnection, msg: ClientMessage_GetStats): void {
+    if (!this.statsCollector) {
+      this.sendTo(conn, { type: 'error', id: msg.id, code: 'NOT_AVAILABLE', message: 'Stats collector not configured' });
+      return;
+    }
+    this.sendTo(conn, this.statsCollector.getStats(msg.id));
+  }
+
   private subscribeEvents(): void {
     this.eventBus.on('tool:pending', (data) => {
       this.broadcast({
@@ -406,6 +420,30 @@ export class WsHandler {
         agentId: data.agentId,
         message: data.message,
         schedule: data.schedule,
+      });
+    });
+
+    this.eventBus.on('agent:status', (data) => {
+      this.broadcast({
+        type: 'agent_status',
+        agentId: data.agentId,
+        chatId: data.chatId,
+        status: data.status,
+        contextTokens: data.contextTokens,
+        maxContextTokens: data.maxContextTokens,
+      });
+    });
+
+    this.eventBus.on('usage', (data) => {
+      this.broadcast({
+        type: 'usage',
+        agentId: data.agentId,
+        chatId: data.chatId,
+        inputTokens: data.inputTokens,
+        outputTokens: data.outputTokens,
+        cacheReadTokens: data.cacheReadTokens,
+        cacheWriteTokens: data.cacheWriteTokens,
+        model: data.model,
       });
     });
   }

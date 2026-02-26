@@ -47,6 +47,7 @@ import { parseMentions, validateMentions } from './orchestrator/mentions.js';
 import { resolveTeam } from './orchestrator/team.js';
 import { GatewayServer } from './gateway/server.js';
 import { WsHandler } from './gateway/ws-handler.js';
+import { StatsCollector } from './gateway/stats-collector.js';
 import { ApprovalBridge, type ApprovalDecision } from './gateway/approval-bridge.js';
 import { MentionablesProvider } from './gateway/mentionables.js';
 import { Scheduler } from './scheduler/index.js';
@@ -405,6 +406,7 @@ async function main() {
   };
 
   let wsHandler: WsHandler | null = null;
+  const statsCollector = new StatsCollector(eventBus, sessionProvider, approvalBridge);
   if (config.gateway.enabled) {
     wsHandler = new WsHandler(
       bus, pairing, config.gateway.requirePairing,
@@ -437,6 +439,7 @@ async function main() {
           return success;
         },
       },
+      statsCollector,
     );
     wsHandler.setSessionProvider(sessionProvider);
 
@@ -767,6 +770,15 @@ async function main() {
         content: result.content,
         iterations: result.iterations,
         toolsUsed: result.toolsUsed.map(t => t.name),
+      });
+      eventBus.emit('usage', {
+        agentId,
+        chatId,
+        inputTokens: result.usage.inputTokens,
+        outputTokens: result.usage.outputTokens,
+        cacheReadTokens: result.usage.cacheReadTokens,
+        cacheWriteTokens: result.usage.cacheWriteTokens,
+        model,
       });
       eventBus.emit('agent:stopped', { agentId, reason: 'completed' });
 

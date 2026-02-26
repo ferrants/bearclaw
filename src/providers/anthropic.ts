@@ -138,6 +138,8 @@ export class AnthropicProvider implements LLMProvider {
               promptTokens: usage?.promptTokens ?? 0,
               completionTokens: msgUsage.output_tokens ?? 0,
               totalTokens: (usage?.promptTokens ?? 0) + (msgUsage.output_tokens ?? 0),
+              cacheReadTokens: usage?.cacheReadTokens,
+              cacheWriteTokens: usage?.cacheWriteTokens,
             };
           }
         } else if (type === 'message_start') {
@@ -148,6 +150,8 @@ export class AnthropicProvider implements LLMProvider {
               promptTokens: msgUsage.input_tokens ?? 0,
               completionTokens: 0,
               totalTokens: msgUsage.input_tokens ?? 0,
+              cacheReadTokens: msgUsage.cache_read_input_tokens ?? undefined,
+              cacheWriteTokens: msgUsage.cache_creation_input_tokens ?? undefined,
             };
           }
         }
@@ -232,6 +236,8 @@ export class AnthropicProvider implements LLMProvider {
         promptTokens: usage.input_tokens ?? 0,
         completionTokens: usage.output_tokens ?? 0,
         totalTokens: (usage.input_tokens ?? 0) + (usage.output_tokens ?? 0),
+        cacheReadTokens: usage.cache_read_input_tokens ?? undefined,
+        cacheWriteTokens: usage.cache_creation_input_tokens ?? undefined,
       } : undefined,
     };
   }

@@ -14,6 +14,8 @@ export interface EventMap {
   'token:received': { agentId: string; chatId: string; token: string };
   'agent:response': { agentId: string; chatId: string; content: string; iterations: number; toolsUsed: string[] };
   'schedule:triggered': { chatId: string; agentId: string; message: string; schedule: string };
+  'agent:status': { agentId: string; chatId: string; status: 'idle' | 'thinking' | 'tool_use'; contextTokens: number; maxContextTokens: number };
+  'usage': { agentId: string; chatId: string; inputTokens: number; outputTokens: number; cacheReadTokens?: number; cacheWriteTokens?: number; model: string };
 }
 
 type EventHandler<T> = (data: T) => void;

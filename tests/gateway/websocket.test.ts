@@ -3,6 +3,8 @@ import { EventEmitter } from 'node:events';
 import { upgradeToWebSocket } from '../../src/gateway/websocket.js';
 import { WsHandler } from '../../src/gateway/ws-handler.js';
 import type { SessionProvider } from '../../src/gateway/ws-handler.js';
+import { EventBus } from '../../src/events.js';
+import { StatsCollector } from '../../src/gateway/stats-collector.js';
 import type { IncomingMessage } from 'node:http';
 
 function createMockSocket() {
@@ -257,5 +259,136 @@ describe('WsHandler chat list/history', () => {
     const response = msgs.find((m: any) => m.type === 'chat_history') as any;
     expect(response.messages).toHaveLength(3);
     expect(response.messages.every((m: any) => m.role !== 'system')).toBe(true);
+  });
+});
+
+describe('WsHandler dashboard events', () => {
+  function createMockBus() {
+    return { publishInbound: vi.fn(), publishOutbound: vi.fn(), consumeInbound: vi.fn(), consumeOutbound: vi.fn() };
+  }
+  function createMockPairing() {
+    return { verifyToken: () => true, generateCode: vi.fn(), verifyCode: vi.fn(), addStaticKey: vi.fn() };
+  }
+  function createMockApprovalBridge() {
+    return { listPending: () => [], requestApproval: vi.fn(), resolveApproval: vi.fn(), clear: vi.fn() };
+  }
+  function createMockMentionables() {
+    return { query: () => [] };
+  }
+  function createMockSessionProvider(): SessionProvider {
+    return { listChats: () => [], getChatHistory: () => [] };
+  }
+
+  function connectClient(handler: WsHandler) {
+    const { socket, emitter, written } = createMockSocket();
+    const req = {
+      url: '/ws',
+      headers: { host: 'localhost', 'sec-websocket-key': 'dGhlIHNhbXBsZSBub25jZQ==' },
+    } as unknown as IncomingMessage;
+    handler.handleUpgrade(req, socket, Buffer.alloc(0));
+    return { emitter, written };
+  }
+
+  function parseServerMessages(written: Buffer[]): unknown[] {
+    const messages: unknown[] = [];
+    for (let i = 1; i < written.length; i++) {
+      const frame = written[i];
+      const len = frame[1] & 0x7f;
+      let offset = 2;
+      if (len === 126) offset = 4;
+      if (len === 127) offset = 10;
+      const payload = frame.subarray(offset).toString('utf8');
+      try { messages.push(JSON.parse(payload)); } catch { /* ignore */ }
+    }
+    return messages;
+  }
+
+  it('broadcasts agent_status events to connected clients', () => {
+    const eventBus = new EventBus();
+    const handler = new WsHandler(
+      createMockBus() as any, createMockPairing() as any, false,
+      eventBus, createMockApprovalBridge() as any, createMockMentionables() as any,
+    );
+    const { written } = connectClient(handler);
+
+    eventBus.emit('agent:status', {
+      agentId: 'agent1', chatId: 'chat1', status: 'thinking',
+      contextTokens: 5000, maxContextTokens: 200000,
+    });
+
+    const msgs = parseServerMessages(written);
+    const statusMsg = msgs.find((m: any) => m.type === 'agent_status') as any;
+    expect(statusMsg).toBeDefined();
+    expect(statusMsg.agentId).toBe('agent1');
+    expect(statusMsg.status).toBe('thinking');
+    expect(statusMsg.contextTokens).toBe(5000);
+    expect(statusMsg.maxContextTokens).toBe(200000);
+  });
+
+  it('broadcasts usage events to connected clients', () => {
+    const eventBus = new EventBus();
+    const handler = new WsHandler(
+      createMockBus() as any, createMockPairing() as any, false,
+      eventBus, createMockApprovalBridge() as any, createMockMentionables() as any,
+    );
+    const { written } = connectClient(handler);
+
+    eventBus.emit('usage', {
+      agentId: 'agent1', chatId: 'chat1',
+      inputTokens: 1000, outputTokens: 500,
+      cacheReadTokens: 200, cacheWriteTokens: 100,
+      model: 'claude-sonnet-4-5-20250929',
+    });
+
+    const msgs = parseServerMessages(written);
+    const usageMsg = msgs.find((m: any) => m.type === 'usage') as any;
+    expect(usageMsg).toBeDefined();
+    expect(usageMsg.inputTokens).toBe(1000);
+    expect(usageMsg.outputTokens).toBe(500);
+    expect(usageMsg.cacheReadTokens).toBe(200);
+    expect(usageMsg.cacheWriteTokens).toBe(100);
+    expect(usageMsg.model).toBe('claude-sonnet-4-5-20250929');
+  });
+
+  it('handles get_stats request via StatsCollector', () => {
+    const eventBus = new EventBus();
+    const sessions = createMockSessionProvider();
+    const approvalBridge = createMockApprovalBridge();
+    const statsCollector = new StatsCollector(eventBus, sessions, approvalBridge as any);
+
+    const handler = new WsHandler(
+      createMockBus() as any, createMockPairing() as any, false,
+      eventBus, approvalBridge as any, createMockMentionables() as any,
+      undefined, undefined, statsCollector,
+    );
+    const { emitter, written } = connectClient(handler);
+
+    emitter.emit('data', makeClientFrame(JSON.stringify({ type: 'get_stats', id: 'stat1' })));
+
+    const msgs = parseServerMessages(written);
+    const statsMsg = msgs.find((m: any) => m.type === 'stats') as any;
+    expect(statsMsg).toBeDefined();
+    expect(statsMsg.id).toBe('stat1');
+    expect(statsMsg.uptimeSeconds).toBeGreaterThanOrEqual(0);
+    expect(statsMsg.agents).toEqual([]);
+    expect(typeof statsMsg.totalChatCount).toBe('number');
+    expect(typeof statsMsg.pendingApprovals).toBe('number');
+  });
+
+  it('returns error for get_stats without StatsCollector', () => {
+    const eventBus = new EventBus();
+    const handler = new WsHandler(
+      createMockBus() as any, createMockPairing() as any, false,
+      eventBus, createMockApprovalBridge() as any, createMockMentionables() as any,
+    );
+    const { emitter, written } = connectClient(handler);
+
+    emitter.emit('data', makeClientFrame(JSON.stringify({ type: 'get_stats', id: 'stat1' })));
+
+    const msgs = parseServerMessages(written);
+    const errorMsg = msgs.find((m: any) => m.type === 'error') as any;
+    expect(errorMsg).toBeDefined();
+    expect(errorMsg.code).toBe('NOT_AVAILABLE');
+    expect(errorMsg.id).toBe('stat1');
   });
 });

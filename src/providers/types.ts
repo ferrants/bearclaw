@@ -19,6 +19,8 @@ export interface LLMResponse {
     promptTokens: number;
     completionTokens: number;
     totalTokens: number;
+    cacheReadTokens?: number;
+    cacheWriteTokens?: number;
   };
 }
 

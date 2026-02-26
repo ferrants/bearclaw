@@ -58,6 +58,7 @@ export async function createAgentRuntime(opts: CreateAgentRuntimeOptions): Promi
     resolvedConfig.security.allowedPaths,
     rateLimiter,
     resolvedConfig.security.allowSubshells,
+    agentDir.dir,
   );
 
   // Create per-agent policy engine
