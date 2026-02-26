@@ -20,6 +20,7 @@ export interface ChatState {
   currentAgentId: string | null
   agentIndex: number
   themeName: string
+  agentStatuses: Record<string, { status: "idle" | "thinking" | "tool_use"; contextTokens?: number; maxContextTokens?: number }>
 }
 
 export type ChatAction =
@@ -52,6 +53,7 @@ export type ChatAction =
   | { type: "SET_AGENT"; agentId: string }
   | { type: "AGENT_SELECT_MOVE"; delta: number }
   | { type: "CYCLE_THEME" }
+  | { type: "AGENT_STATUS"; agentId: string; status: "idle" | "thinking" | "tool_use"; contextTokens?: number; maxContextTokens?: number }
 
 function summarizeArgs(toolName: string, args: Record<string, unknown>): string {
   // Pick the most useful arg to show inline
@@ -306,6 +308,20 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
       return { ...state, agentIndex: next, currentAgentId: agentId, sessionIndex: 0 }
     }
 
+    case "AGENT_STATUS": {
+      return {
+        ...state,
+        agentStatuses: {
+          ...state.agentStatuses,
+          [action.agentId]: {
+            status: action.status,
+            contextTokens: action.contextTokens,
+            maxContextTokens: action.maxContextTokens,
+          },
+        },
+      }
+    }
+
     case "CYCLE_THEME":
       return { ...state, themeName: nextThemeName(state.themeName) }
 
@@ -334,6 +350,7 @@ const INITIAL_STATE: ChatState = {
   currentAgentId: null,
   agentIndex: 0,
   themeName: loadThemeName(),
+  agentStatuses: {},
 }
 
 export function useChatState() {

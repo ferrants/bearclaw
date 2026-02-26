@@ -446,5 +446,13 @@ export class WsHandler {
         model: data.model,
       });
     });
+
+    this.eventBus.on('agent:error', (data) => {
+      this.broadcast({
+        type: 'error',
+        code: 'AGENT_ERROR',
+        message: `Agent ${data.agentId} error: ${data.message}`,
+      });
+    });
   }
 }

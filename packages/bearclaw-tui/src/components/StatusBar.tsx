@@ -6,6 +6,7 @@ interface StatusBarProps {
   messageCount: number
   connectionStatus: ConnectionStatus
   agentName?: string | null
+  agentStatus?: "idle" | "thinking" | "tool_use"
 }
 
 function connectionColor(status: ConnectionStatus, theme: Theme): string | undefined {
@@ -28,17 +29,35 @@ function modeHints(mode: AppMode): string {
   }
 }
 
-export function StatusBar({ mode, messageCount, connectionStatus, agentName }: StatusBarProps) {
+export function StatusBar({ mode, messageCount, connectionStatus, agentName, agentStatus }: StatusBarProps) {
   const theme = useTheme()
+  const statusLabel = agentStatusLabel(agentStatus)
+  const statusColor = agentStatusColor(agentStatus, theme)
   return (
     <box height={1} width="100%" backgroundColor={c(theme.bgBar)} paddingX={1}>
       <text>
         <span fg={c(theme.info)}><strong>[{mode.toUpperCase()}]</strong></span>
         {" "}
         {agentName && <><span fg={c(theme.accentSecondary)}>@{agentName}</span>{" "}</>}
+        {statusLabel && <><span fg={statusColor}>{statusLabel}</span>{" "}</>}
         <span fg={connectionColor(connectionStatus, theme)}>{connectionStatus.toUpperCase()}</span>
         {" "}Messages: {messageCount} | {modeHints(mode)}
       </text>
     </box>
   )
+}
+
+function agentStatusLabel(status?: "idle" | "thinking" | "tool_use"): string {
+  if (!status) return ""
+  if (status === "tool_use") return "WORKING"
+  return status.toUpperCase()
+}
+
+function agentStatusColor(status: "idle" | "thinking" | "tool_use" | undefined, theme: Theme): string | undefined {
+  if (!status) return undefined
+  switch (status) {
+    case "idle": return c(theme.textMuted)
+    case "thinking": return c(theme.warning)
+    case "tool_use": return c(theme.accent)
+  }
 }

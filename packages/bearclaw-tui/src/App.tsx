@@ -57,7 +57,10 @@ export function App() {
     if (msg.type === "token") dashDispatch({ type: "TOKEN_RECEIVED" })
     if (msg.type === "tool_started") dashDispatch({ type: "TOOL_STARTED", toolCallId: msg.toolCallId, toolName: msg.toolName })
     if (msg.type === "tool_completed") dashDispatch({ type: "TOOL_COMPLETED", toolCallId: msg.toolCallId, toolName: msg.toolName, durationMs: msg.durationMs, isError: msg.isError })
-    if (msg.type === "agent_status") dashDispatch({ type: "AGENT_STATUS", agentId: msg.agentId, status: msg.status, contextTokens: msg.contextTokens, maxContextTokens: msg.maxContextTokens })
+    if (msg.type === "agent_status") {
+      dashDispatch({ type: "AGENT_STATUS", agentId: msg.agentId, status: msg.status, contextTokens: msg.contextTokens, maxContextTokens: msg.maxContextTokens })
+      dispatch({ type: "AGENT_STATUS", agentId: msg.agentId, status: msg.status, contextTokens: msg.contextTokens, maxContextTokens: msg.maxContextTokens })
+    }
     if (msg.type === "usage") dashDispatch({ type: "USAGE", model: msg.model, inputTokens: msg.inputTokens, outputTokens: msg.outputTokens, cacheReadTokens: msg.cacheReadTokens, cacheWriteTokens: msg.cacheWriteTokens })
     if (msg.type === "stats") dashDispatch({ type: "STATS", uptimeSeconds: msg.uptimeSeconds, agents: msg.agents, totalChatCount: msg.totalChatCount, totalMessages: msg.totalMessages, pendingApprovals: msg.pendingApprovals })
 
@@ -508,7 +511,13 @@ export function App() {
       <ThemeContext.Provider value={theme}>
         <box flexDirection="column" width="100%" height="100%">
           <Dashboard state={dashState} />
-          <StatusBar mode={mode} messageCount={messages.length} connectionStatus={connectionStatus} agentName={currentAgentId} />
+          <StatusBar
+            mode={mode}
+            messageCount={messages.length}
+            connectionStatus={connectionStatus}
+            agentName={currentAgentId}
+            agentStatus={currentAgentId ? state.agentStatuses[currentAgentId]?.status : undefined}
+          />
         </box>
       </ThemeContext.Provider>
     )
@@ -543,7 +552,13 @@ export function App() {
             }}
           />
           {pendingApproval && <ApprovalPrompt approval={pendingApproval} />}
-          <StatusBar mode={mode} messageCount={messages.length} connectionStatus={connectionStatus} agentName={currentAgentId} />
+          <StatusBar
+            mode={mode}
+            messageCount={messages.length}
+            connectionStatus={connectionStatus}
+            agentName={currentAgentId}
+            agentStatus={currentAgentId ? state.agentStatuses[currentAgentId]?.status : undefined}
+          />
           {slashMenuVisible && (
             <SlashMenu filter={slashFilter} selectedIndex={slashMenuIndex} />
           )}

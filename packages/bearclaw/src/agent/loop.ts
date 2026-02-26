@@ -63,6 +63,7 @@ export async function runAgentLoop(
 
     // Check token budget
     if (maxTotalTokens && totalTokens >= maxTotalTokens) {
+      eventBus?.emit('agent:status', { agentId: evAgentId, chatId: evChatId, status: 'idle', contextTokens, maxContextTokens });
       const usage = { inputTokens, outputTokens, cacheReadTokens: cacheReadTokens > 0 ? cacheReadTokens : undefined, cacheWriteTokens: cacheWriteTokens > 0 ? cacheWriteTokens : undefined };
       return { content: 'Token budget exceeded.', iterations: iteration, toolsUsed, totalTokens, usage };
     }
@@ -103,6 +104,7 @@ export async function runAgentLoop(
     // No tool calls → done
     if (response.toolCalls.length === 0) {
       log.info('Loop complete', { agentId, iteration, reason: response.finishReason, totalTokens, responseLength: response.content.length });
+      eventBus?.emit('agent:status', { agentId: evAgentId, chatId: evChatId, status: 'idle', contextTokens, maxContextTokens });
       const usage = { inputTokens, outputTokens, cacheReadTokens: cacheReadTokens > 0 ? cacheReadTokens : undefined, cacheWriteTokens: cacheWriteTokens > 0 ? cacheWriteTokens : undefined };
       return { content: response.content, iterations: iteration, toolsUsed, totalTokens, usage };
     }
@@ -202,6 +204,7 @@ export async function runAgentLoop(
   }
 
   log.warn('Max iterations reached', { agentId: ctx.currentAgentConfig.name, maxIterations, totalTokens });
+  eventBus?.emit('agent:status', { agentId: evAgentId, chatId: evChatId, status: 'idle', contextTokens, maxContextTokens });
   const usage = { inputTokens, outputTokens, cacheReadTokens: cacheReadTokens > 0 ? cacheReadTokens : undefined, cacheWriteTokens: cacheWriteTokens > 0 ? cacheWriteTokens : undefined };
   return {
     content: 'Reached maximum iterations without a final response.',

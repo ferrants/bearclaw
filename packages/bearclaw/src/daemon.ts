@@ -807,6 +807,12 @@ async function main() {
       }
     } catch (err) {
       log.error('Agent error', { agentId, error: String(err) });
+      eventBus.emit('agent:error', {
+        agentId,
+        chatId,
+        message: (err as Error).message,
+      });
+      eventBus.emit('agent:status', { agentId, chatId, status: 'idle' });
       bus.publishOutbound({
         channel,
         chatId,
