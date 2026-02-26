@@ -1,0 +1,31 @@
+packages/bearclaw/src/gateway/stats-collector.ts
+  a9659d9ed6556ad1 4
+packages/bearclaw/src/daemon.ts
+  a9659d9ed6556ad1 56
+packages/bearclaw/src/gateway/ws-handler.ts
+  a9659d9ed6556ad1 19
+packages/bearclaw/src/gateway/ws-protocol.ts
+  a9659d9ed6556ad1 1-277
+packages/bearclaw/src/gateway/mentionables.ts
+  a9659d9ed6556ad1 4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.5",
+  "base_commit_sha": "9dfd281a41cccbb5c5e2af1fcba913d59f0559d9",
+  "prompts": {
+    "a9659d9ed6556ad1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019c9802-ebe4-7a93-9670-0c12c92be84e",
+        "model": "gpt-5.2-codex"
+      },
+      "human_author": "Matt Ferrante <matt@heyferrante.com>",
+      "messages": [],
+      "total_additions": 294,
+      "total_deletions": 6,
+      "accepted_lines": 294,
+      "overriden_lines": 0
+    }
+  }
+}
