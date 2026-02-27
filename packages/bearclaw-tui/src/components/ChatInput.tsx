@@ -34,11 +34,16 @@ function estimateLines(text: string, maxWidth: number): number {
 export function ChatInput({ inputRef, value, onChange, onInput, onSubmit, focused, maxWidth }: ChatInputProps) {
   const theme = useTheme()
   const localRef = useRef<TextareaRenderable | null>(null)
+  const internalChange = useRef(false)
   const lines = estimateLines(value, maxWidth - 4)
   const maxLines = 6
   const height = Math.min(maxLines, Math.max(1, lines)) + 2
 
   useEffect(() => {
+    if (internalChange.current) {
+      internalChange.current = false
+      return
+    }
     const node = localRef.current
     if (!node) return
     const current = node.plainText
@@ -63,6 +68,7 @@ export function ChatInput({ inputRef, value, onChange, onInput, onSubmit, focuse
         }}
         onContentChange={() => {
           const text = localRef.current?.plainText ?? ""
+          internalChange.current = true
           onChange(text)
           onInput?.(text)
         }}
