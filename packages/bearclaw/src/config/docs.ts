@@ -7,37 +7,7 @@ export interface ConfigFieldDoc {
 }
 
 export const CONFIG_DOCS: ConfigFieldDoc[] = [
-  // workspace
-  {
-    path: 'workspace.path',
-    type: 'string',
-    description: 'Root directory for the workspace. Tools operate relative to this path.',
-    defaultValue: '~/.bearclaw/workspace',
-    isSecurity: false,
-  },
-
-  // security
-  {
-    path: 'security.autonomy',
-    type: '"readonly" | "supervised" | "full"',
-    description: 'Controls how much the agent can do without asking. "readonly" = read-only tools only, "supervised" = prompt for writes/exec, "full" = no prompts.',
-    defaultValue: 'supervised',
-    isSecurity: true,
-  },
-  {
-    path: 'security.workspaceOnly',
-    type: 'boolean',
-    description: 'When true, file tools are restricted to the workspace directory.',
-    defaultValue: true,
-    isSecurity: true,
-  },
-  {
-    path: 'security.allowedCommands',
-    type: 'string[]',
-    description: 'Shell commands the agent may run without approval.',
-    defaultValue: '["git","cargo","go","ls","cat","grep","find","echo","pwd","wc","head","tail","sort","uniq","diff","date","which","mkdir","cp","mv","touch","chmod"]',
-    isSecurity: true,
-  },
+  // security (instance-level)
   {
     path: 'security.forbiddenPaths',
     type: 'string[]',
@@ -53,13 +23,6 @@ export const CONFIG_DOCS: ConfigFieldDoc[] = [
     isSecurity: true,
   },
   {
-    path: 'security.allowSubshells',
-    type: 'boolean',
-    description: 'Whether the exec tool may use shell operators (pipes, redirects, subshells).',
-    defaultValue: false,
-    isSecurity: true,
-  },
-  {
     path: 'security.rateLimits.global',
     type: 'number',
     description: 'Maximum tool calls per minute across all agents.',
@@ -70,6 +33,13 @@ export const CONFIG_DOCS: ConfigFieldDoc[] = [
     path: 'security.rateLimits.perAgent',
     type: 'number',
     description: 'Maximum tool calls per minute per agent (optional).',
+    defaultValue: undefined,
+    isSecurity: true,
+  },
+  {
+    path: 'security.rateLimits.perToolClass',
+    type: 'Record<string, number>',
+    description: 'Maximum tool calls per minute per tool class (optional).',
     defaultValue: undefined,
     isSecurity: true,
   },
@@ -190,87 +160,6 @@ export const CONFIG_DOCS: ConfigFieldDoc[] = [
     description: 'List of enabled channel names (e.g. "cli").',
     defaultValue: '["cli"]',
     isSecurity: false,
-  },
-
-  // memory
-  {
-    path: 'memory.enabled',
-    type: 'boolean',
-    description: 'Enable agent memory (persistent notes across sessions).',
-    defaultValue: true,
-    isSecurity: false,
-  },
-  {
-    path: 'memory.dir',
-    type: 'string',
-    description: 'Directory for memory files, relative to config dir.',
-    defaultValue: 'memory',
-    isSecurity: false,
-  },
-  {
-    path: 'memory.alwaysLoad',
-    type: 'string[]',
-    description: 'Memory files to always include in context.',
-    defaultValue: '["active-tasks.md"]',
-    isSecurity: false,
-  },
-
-  // policy
-  {
-    path: 'policy.defaultAction',
-    type: '"allow" | "deny" | "approve"',
-    description: 'Default action when no policy rule matches a tool call.',
-    defaultValue: 'approve',
-    isSecurity: true,
-  },
-  {
-    path: 'policy.denyPrecedence',
-    type: 'boolean',
-    description: 'When true, deny rules take precedence over allow rules.',
-    defaultValue: true,
-    isSecurity: true,
-  },
-  {
-    path: 'policy.approvalScope',
-    type: '"user+channel" | "conversation" | "global"',
-    description: 'Scope at which approvals are tracked.',
-    defaultValue: 'user+channel',
-    isSecurity: true,
-  },
-  {
-    path: 'policy.learningMode',
-    type: '"suggest_rules" | "auto_allow_prompt" | "auto_allow"',
-    description: 'How the policy engine learns from approved actions.',
-    defaultValue: 'suggest_rules',
-    isSecurity: true,
-  },
-  {
-    path: 'policy.approvals.cache',
-    type: 'boolean',
-    description: 'Cache approval decisions to avoid re-prompting.',
-    defaultValue: false,
-    isSecurity: true,
-  },
-  {
-    path: 'policy.approvals.defaultTTLSeconds',
-    type: 'number',
-    description: 'How long cached approvals last in seconds.',
-    defaultValue: 300,
-    isSecurity: true,
-  },
-  {
-    path: 'policy.inlineAllow.enabled',
-    type: 'boolean',
-    description: 'Allow users to grant tool permissions inline (e.g. "!allow exec").',
-    defaultValue: true,
-    isSecurity: true,
-  },
-  {
-    path: 'policy.inlineAllow.dayScopeHours',
-    type: 'number',
-    description: 'How long day-scoped inline allows last in hours.',
-    defaultValue: 24,
-    isSecurity: true,
   },
 
   // monitoring

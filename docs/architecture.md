@@ -24,7 +24,7 @@ Skills live in `{workspace}/skills/{name}/SKILL.md` with YAML frontmatter and ma
 
 ### MCP Client
 
-BearClaw includes a built-in MCP client that communicates over stdio using JSON-RPC 2.0. MCP servers are configured in `config.json` and spawned at startup, with tools discovered via `tools/list` and registered automatically. Additionally, CLI Delegation remains available for tools that need full MCP support via external processes.
+BearClaw includes a built-in MCP client that communicates over stdio using JSON-RPC 2.0. MCP servers are configured in `bearclaw.jsonc` and spawned at startup, with tools discovered via `tools/list` and registered automatically. Additionally, CLI Delegation remains available for tools that need full MCP support via external processes.
 
 ### Sessions = JSON Files
 

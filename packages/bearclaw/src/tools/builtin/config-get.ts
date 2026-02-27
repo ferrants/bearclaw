@@ -33,13 +33,13 @@ function redactSecrets(obj: unknown, currentPath: string = ''): unknown {
 export function createConfigGetTool(configManager: ConfigManager): Tool {
   return {
     name: 'config_get',
-    description: 'Read the current BearClaw configuration. Optionally specify a dotted path to read a specific field (e.g. "security.autonomy"). Secrets are redacted.',
+    description: 'Read the current BearClaw instance configuration. Optionally specify a dotted path to read a specific field. Secrets are redacted.',
     parameters: {
       type: 'object',
       properties: {
         path: {
           type: 'string',
-          description: 'Dotted path to a specific config field (e.g. "security.autonomy"). Omit to get the full config.',
+          description: 'Dotted path to a specific config field (e.g. "providers.openai.defaultModel"). Omit to get the full config.',
         },
       },
     },

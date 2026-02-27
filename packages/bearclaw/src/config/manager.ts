@@ -1,10 +1,10 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import type { BearClawConfig } from './schema.js';
+import type { InstanceConfig } from './instance-schema.js';
 import { saveConfig, stripJsonc } from './config.js';
 
-export type ConfigReloadListener = (config: BearClawConfig) => void;
+export type ConfigReloadListener = (config: InstanceConfig) => void;
 
 /**
  * Paths that belong to the agent-level config (bearclaw.jsonc).
@@ -15,10 +15,7 @@ const AGENT_PATH_PREFIXES = [
   'security.autonomy',
   'security.workspaceOnly',
   'security.allowedCommands',
-  'security.allowedPaths',
   'security.allowSubshells',
-  'security.rateLimits.perAgent',
-  'security.rateLimits.perToolClass',
   'memory.',
   'policy.',
 ];
@@ -28,11 +25,11 @@ function isAgentLevelPath(dottedPath: string): boolean {
 }
 
 export class ConfigManager {
-  private config: BearClawConfig;
+  private config: InstanceConfig;
   private listeners: ConfigReloadListener[] = [];
   private agentDirPath: string | undefined;
 
-  constructor(config: BearClawConfig, agentDirPath?: string) {
+  constructor(config: InstanceConfig, agentDirPath?: string) {
     this.config = config;
     this.agentDirPath = agentDirPath;
   }
@@ -68,10 +65,6 @@ export class ConfigManager {
     current[lastKey] = value;
 
     // Expand ~ in workspace path
-    if (dottedPath === 'workspace.path' && typeof value === 'string' && value.startsWith('~/')) {
-      this.config.workspace.path = path.join(os.homedir(), value.slice(2));
-    }
-
     // Expand ~ in allowedPaths
     if (dottedPath === 'security.allowedPaths' && Array.isArray(value)) {
       this.config.security.allowedPaths = value.map((p: string) =>
@@ -97,7 +90,7 @@ export class ConfigManager {
   }
 
   /** Get the full config object (read-only reference). */
-  getConfig(): BearClawConfig {
+  getConfig(): InstanceConfig {
     return this.config;
   }
 

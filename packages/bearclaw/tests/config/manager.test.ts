@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { ConfigManager } from '../../src/config/manager.js';
-import { defaultConfig } from '../../src/config/config.js';
+import { defaultInstanceConfig } from '../../src/config/config.js';
 
 vi.mock('../../src/config/config.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/config/config.js')>();
@@ -14,7 +14,7 @@ vi.mock('../../src/config/config.js', async (importOriginal) => {
 });
 
 function makeConfig() {
-  return defaultConfig();
+  return defaultInstanceConfig();
 }
 
 describe('ConfigManager', () => {
@@ -23,10 +23,9 @@ describe('ConfigManager', () => {
       const config = makeConfig();
       const manager = new ConfigManager(config);
 
-      expect(manager.get('security.autonomy')).toBe('supervised');
+      expect(manager.get('security.encrypt')).toBe(true);
       expect(manager.get('monitoring.logLevel')).toBe('info');
       expect(manager.get('gateway.port')).toBe(3000);
-      expect(manager.get('memory.enabled')).toBe(true);
     });
 
     it('returns undefined for missing paths', () => {
@@ -44,7 +43,7 @@ describe('ConfigManager', () => {
 
       const security = manager.get('security') as Record<string, unknown>;
       expect(security).toBeDefined();
-      expect(security.autonomy).toBe('supervised');
+      expect(security.encrypt).toBe(true);
     });
   });
 

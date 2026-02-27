@@ -27,7 +27,7 @@
 - **Multi-agent orchestration** — Team-based routing, `[@agent: message]` mention parsing, conversation tracking with fan-out/fan-in pattern
 - **Multi-channel messaging** — CLI REPL and HTTP gateway with a unified message bus
 - **Skills system** — Drop a `SKILL.md` into `skills/` and BearClaw picks it up automatically. Follows the [Agent Skills spec](https://agentskills.io/specification.md) — the same skill files work in Claude Code and other compatible tools. Multi-source loading with workspace precedence over user-level skills. All skills available as `/skill-name` slash commands in the CLI.
-- **MCP support** — Configure MCP servers in `config.json` and their tools are discovered and registered automatically via JSON-RPC 2.0 over stdio.
+- **MCP support** — Configure MCP servers in `bearclaw.jsonc` and their tools are discovered and registered automatically via JSON-RPC 2.0 over stdio.
 - **Headless mode** — Run one-shot prompts with `bearclaw -p "your prompt"` for scripting and automation.
 - **Tool system** — 10 built-in tools with JSON Schema validation, before/after hooks, parallel execution, and structured results (forLLM/forUser/silent/async)
 - **HTTP gateway** — Pairing-based authentication with CSPRNG codes, SHA-256 token verification, and brute-force lockout
@@ -56,9 +56,9 @@ Requires Node.js 20+.
 
 ## Quick Start
 
-### 1. Create a config
+### 1. Create an instance config
 
-BearClaw looks for its configuration at `~/.bearclaw/config.json` (override with `BEARCLAW_CONFIG_DIR` env var).
+BearClaw looks for instance config at `~/.bearclaw/config.jsonc` (override with `BEARCLAW_CONFIG_DIR` env var).
 
 ```json
 {
@@ -67,19 +67,25 @@ BearClaw looks for its configuration at `~/.bearclaw/config.json` (override with
       "apiKey": "sk-...",
       "defaultModel": "gpt-4o-mini"
     }
-  },
-  "agents": {
-    "default": {
-      "name": "default",
-      "provider": "openai"
-    }
   }
 }
 ```
 
 On first run, BearClaw will encrypt your API key in-place and generate a secret key at `~/.bearclaw/.secret_key`.
 
-### 2. Start the CLI
+### 2. Create an agent config
+
+Create a `bearclaw.jsonc` in your agent directory:
+
+```json
+{
+  "name": "default",
+  "provider": "openai",
+  "workspace": "./workspace"
+}
+```
+
+### 3. Start the CLI
 
 ```bash
 bearclaw
@@ -87,7 +93,7 @@ bearclaw
 
 This launches an interactive REPL with the default agent. Type your message and press enter. Type `/help` to see commands and available skills. Type `/exit` to save your session and exit.
 
-### 3. Headless mode
+### 4. Headless mode
 
 ```bash
 bearclaw -p "explain what BearClaw is"
@@ -95,7 +101,7 @@ bearclaw -p "explain what BearClaw is"
 
 Runs a single prompt, prints the response, and exits. Useful for scripting and automation. Add `-s my-session` to persist conversation state across invocations.
 
-### 4. Start the daemon (multi-channel)
+### 5. Start the daemon (multi-channel)
 
 ```bash
 bearclaw-daemon
@@ -103,7 +109,7 @@ bearclaw-daemon
 
 The daemon supports multiple channels (CLI + gateway), multi-agent routing, team orchestration, and the HTTP gateway.
 
-### 5. Terminal UI
+### 6. Terminal UI
 
 For a full terminal interface with streaming responses, tool call visibility, and approval workflows, see [BearClaw TUI](https://github.com/ferrants/bearclaw/tree/main/packages/bearclaw-tui). It connects to the daemon over WebSocket and requires Bun at runtime.
 
@@ -114,9 +120,9 @@ pnpm -C packages/bearclaw-tui dev
 
 ## Configuration
 
-BearClaw uses a single `config.json` with sensible defaults. You only need to specify what you want to override.
+BearClaw uses an **instance config** at `~/.bearclaw/config.jsonc` for infrastructure and credentials, and an **agent config** (`bearclaw.jsonc`) per agent directory.
 
-### Providers
+### Instance Config (providers, gateway, security)
 
 ```json
 {
@@ -135,50 +141,52 @@ BearClaw uses a single `config.json` with sensible defaults. You only need to sp
     },
     "cliDelegation": {
       "command": "claude",
-      "args": ["--print"],
-      "pattern": "claude"
+      "flags": ["--print"]
     }
+  },
+  "gateway": {
+    "enabled": true,
+    "host": "127.0.0.1",
+    "port": 3000,
+    "requirePairing": true
+  },
+  "security": {
+    "forbiddenPaths": ["/etc", "/root", "..."],
+    "allowedPaths": [],
+    "rateLimits": { "global": 20 },
+    "encrypt": true
   }
 }
 ```
 
-### Agents
+### Agent Config (`bearclaw.jsonc`)
 
 ```json
 {
-  "agents": {
-    "default": {
-      "name": "default",
-      "provider": "openai",
-      "model": "gpt-4o",
-      "maxIterations": 25,
-      "systemPromptFiles": ["prompts/system.md"]
-    },
-    "researcher": {
-      "name": "researcher",
-      "provider": "anthropic",
-      "systemPromptFiles": ["prompts/researcher.md"]
+  "name": "my-agent",
+  "provider": "openai",
+  "workspace": "./workspace",
+  "systemPromptFiles": ["prompts/system.md"],
+  "maxIterations": 25,
+  "subagents": {
+    "ollama_worker": {
+      "name": "ollama_worker",
+      "provider": "ollama",
+      "model": "llama3.2",
+      "maxIterations": 10
     }
-  }
-}
-```
-
-### Security
-
-```json
-{
+  },
   "security": {
     "autonomy": "supervised",
-    "workspaceOnly": true,
-    "encrypt": true,
-    "rateLimits": {
-      "global": 20
-    }
+    "workspaceOnly": true
+  },
+  "memory": {
+    "enabled": true,
+    "dir": "memory",
+    "alwaysLoad": ["focus.md"]
   }
 }
 ```
-
-Autonomy levels: `locked` (no tool use), `supervised` (all tools need approval), `auto` (allowed commands run freely), `full` (everything runs).
 
 ### Teams
 
@@ -237,7 +245,7 @@ packages/
 
 ### How it works
 
-1. **Config loads** — merges `config.json` over defaults, encrypts plaintext API keys
+1. **Config loads** — loads instance config (`config.jsonc`) and encrypts plaintext API keys
 2. **Security initializes** — policy engine, rate limiters, approval manager
 3. **Provider creates** — LLM connections via `fetch()` with retry and streaming
 4. **Tools register** — built-in tools with JSON Schema validation and hook pipeline

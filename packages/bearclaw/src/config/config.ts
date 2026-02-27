@@ -1,15 +1,8 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { type BearClawConfig, AutonomyLevel } from './schema.js';
 import type { InstanceConfig } from './instance-schema.js';
-import { LEGACY_AGENT_FIELDS } from './instance-schema.js';
-import {
-  ALLOWED_COMMANDS,
-  RESTRICTED_COMMANDS,
-  FORBIDDEN_PATHS,
-  POLICY_DEFAULTS,
-} from './defaults.js';
+import { FORBIDDEN_PATHS } from './defaults.js';
 import { createLogger } from '../logging.js';
 
 const log = createLogger('config');
@@ -29,99 +22,7 @@ export function getConfigPath(): string {
   return path.join(dir, 'config.json');
 }
 
-export function defaultConfig(): BearClawConfig {
-  const configDir = resolveConfigDir();
-  return {
-    workspace: {
-      path: path.join(configDir, 'workspace'),
-    },
-    security: {
-      autonomy: AutonomyLevel.Supervised,
-      workspaceOnly: true,
-      allowedCommands: [...ALLOWED_COMMANDS],
-      restrictedCommands: { ...RESTRICTED_COMMANDS },
-      forbiddenPaths: [...FORBIDDEN_PATHS],
-      allowedPaths: [],
-      allowSubshells: false,
-      rateLimits: {
-        global: 20,
-      },
-      encrypt: true,
-    },
-    gateway: {
-      enabled: false,
-      host: '127.0.0.1',
-      port: 3000,
-      bodyLimit: 65536,
-      timeout: 30000,
-      requirePairing: true,
-      allowPublicBind: false,
-      apiKeys: [],
-    },
-    providers: {},
-    channels: {
-      enabled: ['cli'],
-    },
-    mcp: {
-      servers: {},
-    },
-    agents: {
-      default: {
-        name: 'default',
-        provider: 'anthropic',
-        maxIterations: 25,
-        systemPromptFiles: [],
-      },
-    },
-    teams: {},
-    memory: {
-      enabled: true,
-      dir: 'memory',
-      alwaysLoad: ['active-tasks.md'],
-    },
-    policy: {
-      ...POLICY_DEFAULTS,
-      rules: [],
-    },
-    schedules: [],
-    monitoring: {
-      logLevel: 'info',
-      heartbeatInterval: 3600,
-    },
-  };
-}
-
-export function loadConfig(): BearClawConfig {
-  const defaults = defaultConfig();
-  const configPath = getConfigPath();
-
-  let config: BearClawConfig;
-  try {
-    const raw = fs.readFileSync(configPath, 'utf8');
-    const parsed = JSON.parse(stripJsonc(raw));
-    config = deepMerge(defaults as unknown as Record<string, unknown>, parsed) as unknown as BearClawConfig;
-  } catch {
-    config = defaults;
-  }
-
-  // Expand ~ in workspace path so all consumers get an absolute path
-  if (config.workspace.path.startsWith('~/')) {
-    config.workspace.path = path.join(os.homedir(), config.workspace.path.slice(2));
-  }
-
-  // Expand ~ in allowedPaths
-  if (config.security.allowedPaths) {
-    config.security.allowedPaths = config.security.allowedPaths.map(p =>
-      p.startsWith('~/') ? path.join(os.homedir(), p.slice(2)) : p
-    );
-  } else {
-    config.security.allowedPaths = [];
-  }
-
-  return config;
-}
-
-export function saveConfig(config: BearClawConfig): void {
+export function saveConfig(config: InstanceConfig): void {
   const configDir = resolveConfigDir();
   fs.mkdirSync(configDir, { recursive: true });
   fs.writeFileSync(getConfigPath(), JSON.stringify(config, null, 2), { mode: 0o600 });
@@ -131,7 +32,7 @@ export function saveConfig(config: BearClawConfig): void {
  * Encrypt plaintext API keys in the config and rewrite config.json.
  * Called once at startup. Idempotent — already-encrypted values are skipped.
  */
-export function encryptConfigSecrets(config: BearClawConfig, encrypt: (plaintext: string) => string, isEncrypted: (value: string) => boolean): boolean {
+export function encryptConfigSecrets(config: InstanceConfig, encrypt: (plaintext: string) => string, isEncrypted: (value: string) => boolean): boolean {
   let changed = false;
 
   if (config.providers.anthropic?.apiKey && !isEncrypted(config.providers.anthropic.apiKey)) {
@@ -293,13 +194,6 @@ export function loadInstanceConfig(): InstanceConfig {
     const raw = fs.readFileSync(configPath, 'utf8');
     const parsed = JSON.parse(stripJsonc(raw));
     const merged = deepMerge(defaults as unknown as Record<string, unknown>, parsed) as unknown as InstanceConfig;
-
-    // Warn about legacy fields
-    const hasLegacy = LEGACY_AGENT_FIELDS.some(f => f in parsed);
-    if (hasLegacy) {
-      log.warn('Instance config contains agent-level fields. Consider migrating to bearclaw.jsonc per-agent config.');
-    }
-
     return merged;
   } catch {
     return defaults;

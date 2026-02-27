@@ -20,7 +20,7 @@ function connectionColor(status: ConnectionStatus, theme: Theme): string | undef
 
 function modeHints(mode: AppMode): string {
   switch (mode) {
-    case "chat": return "Tab: scroll | Enter: send | /exit: quit"
+    case "chat": return "Tab: scroll | Enter: send | Alt+Enter: newline | /exit: quit"
     case "scrolling": return "Tab: chat | Esc: back"
     case "approval": return "Y/S/D/A: approve | N/!: deny | Esc: reject"
     case "sessions": return "Enter: select | N: new | Esc: back"

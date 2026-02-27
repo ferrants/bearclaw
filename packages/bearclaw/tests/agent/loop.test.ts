@@ -256,9 +256,9 @@ describe('runAgentLoop', () => {
     await runAgentLoop(config, [{ role: 'user', content: 'test' }], makeCtx());
 
     // Iteration 1: thinking → tool_use → thinking (after results)
-    // Iteration 2: thinking (before LLM call, no tools so loop ends)
+    // Iteration 2: thinking (before LLM call) → idle (no tools, loop ends)
     expect(statusEvents.map(e => e.status)).toEqual([
-      'thinking', 'tool_use', 'thinking', 'thinking',
+      'thinking', 'tool_use', 'thinking', 'thinking', 'idle',
     ]);
   });
 

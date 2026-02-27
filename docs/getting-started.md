@@ -25,7 +25,7 @@ npm link
 
 ## Creating Your First Config
 
-BearClaw looks for configuration at `~/.bearclaw/config.json`. Create the directory and a minimal config:
+BearClaw looks for instance config at `~/.bearclaw/config.jsonc`. Create the directory and a minimal config:
 
 ```bash
 mkdir -p ~/.bearclaw
@@ -38,17 +38,21 @@ mkdir -p ~/.bearclaw
       "apiKey": "sk-your-key-here",
       "defaultModel": "gpt-4o-mini"
     }
-  },
-  "agents": {
-    "default": {
-      "name": "default",
-      "provider": "openai"
-    }
   }
 }
 ```
 
-You only need to specify values you want to override — BearClaw deep-merges your config over sensible defaults.
+You only need to specify values you want to override — BearClaw deep-merges your instance config over sensible defaults.
+
+Create an agent directory with a `bearclaw.jsonc`:
+
+```json
+{
+  "name": "default",
+  "provider": "openai",
+  "workspace": "./workspace"
+}
+```
 
 ### Automatic Key Encryption
 

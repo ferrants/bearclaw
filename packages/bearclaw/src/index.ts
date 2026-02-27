@@ -2,12 +2,9 @@
 
 import * as path from 'node:path';
 import * as readline from 'node:readline';
-import { loadConfig, getConfigDir, encryptConfigSecrets, loadInstanceConfig } from './config/config.js';
+import { getConfigDir, encryptConfigSecrets, loadInstanceConfig } from './config/config.js';
 import { setLogLevel, createLogger } from './logging.js';
 import { SecretStore } from './security/secrets.js';
-import { SecurityPolicy } from './security/policy.js';
-import { ScopedRateLimiter } from './security/rate-limiter.js';
-import { PolicyEngine } from './security/policy-engine.js';
 import { UserRuleStore } from './security/user-rules.js';
 import { ApprovalManager } from './security/approvals.js';
 import { InlineAllowStore } from './security/inline-allow.js';
@@ -35,8 +32,8 @@ import { ConfigManager } from './config/manager.js';
 import { runAgentLoop } from './agent/loop.js';
 import { buildSystemPrompt } from './agent/context.js';
 import { loadSession, saveSession, clearSession } from './agent/session.js';
-import { loadSkills } from './skills/index.js';
-import { McpClient, createMcpTools } from './mcp/index.js';
+import { normalizeMessages } from './agent/normalize-messages.js';
+import type { McpClient } from './mcp/index.js';
 import type { SkillDef } from './skills/types.js';
 import type { ToolContext } from './tools/types.js';
 import { parseSlashCommand } from './commands/slash.js';
@@ -165,7 +162,7 @@ async function main() {
 
   const configDir = getConfigDir();
 
-  // Agent directory discovery: --agent flag > walk-up from cwd > fallback to legacy config
+  // Agent directory discovery: --agent flag > walk-up from cwd
   let agentRuntime: AgentRuntime | undefined;
   let agentDirPath: string | undefined;
 
@@ -176,19 +173,18 @@ async function main() {
   }
 
   // Load instance config + resolve agent
-  const config = loadConfig();
-  setLogLevel(headless ? 'error' : config.monitoring.logLevel);
+  const instanceConfig = loadInstanceConfig();
+  setLogLevel(headless ? 'error' : instanceConfig.monitoring.logLevel);
   log.info('BearClaw CLI starting');
 
   // Initialize secrets and encrypt any plaintext keys
-  const secrets = new SecretStore(configDir, config.security.encrypt);
-  if (config.security.encrypt) {
-    encryptConfigSecrets(config, (v) => secrets.encrypt(v), SecretStore.isEncrypted);
+  const secrets = new SecretStore(configDir, instanceConfig.security.encrypt);
+  if (instanceConfig.security.encrypt) {
+    encryptConfigSecrets(instanceConfig, (v) => secrets.encrypt(v), SecretStore.isEncrypted);
   }
 
   if (agentDirPath) {
     // Agent directory mode: load agent config + merge with instance
-    const instanceConfig = loadInstanceConfig();
     const agentDirInfo = loadAgentDirConfig(agentDirPath);
     agentRuntime = await createAgentRuntime({
       agentDir: agentDirInfo,
@@ -196,25 +192,20 @@ async function main() {
       configDir,
     });
     log.info('Using agent directory', { dir: agentDirPath, name: agentRuntime.name });
+  } else {
+    console.error(boldRed('No agent directory found. Use --agent or run within a directory containing bearclaw.jsonc.'));
+    process.exit(1);
   }
 
-  // Use runtime values or fall back to legacy config
-  const effectiveConfig = agentRuntime?.resolvedConfig ?? config;
-  const policy = agentRuntime?.policy ?? (() => {
-    const rateLimiter = new ScopedRateLimiter(config.security.rateLimits);
-    return new SecurityPolicy(
-      config.security.autonomy,
-      path.resolve(config.workspace.path),
-      config.security.workspaceOnly,
-      config.security.allowedCommands,
-      config.security.restrictedCommands,
-      config.security.forbiddenPaths,
-      config.security.allowedPaths,
-      rateLimiter,
-      config.security.allowSubshells,
-    );
-  })();
-  const policyEngine = agentRuntime?.policyEngine ?? new PolicyEngine(config.policy, configDir);
+  if (!agentRuntime) {
+    console.error(boldRed('Agent runtime failed to initialize.'));
+    process.exit(1);
+  }
+
+  // Use runtime values only
+  const effectiveConfig = agentRuntime.resolvedConfig;
+  const policy = agentRuntime.policy;
+  const policyEngine = agentRuntime.policyEngine;
   const userRuleStore = new UserRuleStore(configDir);
   policyEngine.setUserRules(userRuleStore.toPolicyRules());
 
@@ -227,10 +218,7 @@ async function main() {
     effectiveConfig.policy.approvals.defaultTTLSeconds,
     effectiveConfig.policy.approvals.cache,
   );
-  const inlineAllowStore = agentRuntime?.inlineAllowStore ?? new InlineAllowStore(
-    config.policy.inlineAllow.enabled,
-    config.policy.inlineAllow.dayScopeHours,
-  );
+  const inlineAllowStore = agentRuntime.inlineAllowStore;
 
   // Initialize providers
   function createProvider(name: string): LLMProvider {
@@ -278,62 +266,16 @@ async function main() {
   setAgentLoopFn(runAgentLoop);
 
   // Config tools (hidden until /config is invoked)
-  const configManager = new ConfigManager(config, agentRuntime?.dir);
+  const configManager = new ConfigManager(instanceConfig, agentRuntime.dir);
   toolRegistry.registerHidden(configExplainTool);
   toolRegistry.registerHidden(createConfigGetTool(configManager));
   toolRegistry.registerHidden(createConfigSetTool(configManager, () => cliSimpleApproval('config_set', {})));
 
-  // Reload security objects when config changes (legacy mode only)
-  configManager.onReload((newConfig) => {
-    if (!agentRuntime) {
-      const newRateLimiter = new ScopedRateLimiter(newConfig.security.rateLimits);
-      const newPolicy = new SecurityPolicy(
-        newConfig.security.autonomy,
-        path.resolve(newConfig.workspace.path),
-        newConfig.security.workspaceOnly,
-        newConfig.security.allowedCommands,
-        newConfig.security.restrictedCommands,
-        newConfig.security.forbiddenPaths,
-        newConfig.security.allowedPaths,
-        newRateLimiter,
-        newConfig.security.allowSubshells,
-      );
-      const newPolicyEngine = new PolicyEngine(newConfig.policy, configDir);
-      baseCtx.policy = newPolicy;
-      baseCtx.policyEngine = newPolicyEngine;
-    }
-  });
-
   // Load skills
-  const skills = agentRuntime?.skills ?? loadSkills(path.resolve(config.workspace.path), configDir);
+  const skills = agentRuntime.skills;
 
-  // Start MCP servers (instance-level; agent-level already started in createAgentRuntime)
-  const mcpClients: McpClient[] = [...(agentRuntime?.mcpClients ?? [])];
-  if (!agentRuntime) {
-    for (const [name, serverConfig] of Object.entries(config.mcp.servers)) {
-      const env = expandMcpEnv(serverConfig.env);
-      const client = new McpClient(serverConfig.command, serverConfig.args ?? [], env);
-      await client.start();
-      mcpClients.push(client);
-      for (const tool of await createMcpTools(name, client)) {
-        toolRegistry.register(tool);
-      }
-    }
-  }
-  // Instance MCP servers (for agent-dir mode, load instance MCP not already loaded by agent)
-  if (agentRuntime) {
-    const instanceMcpServers = loadInstanceConfig().mcp?.servers ?? {};
-    for (const [name, serverConfig] of Object.entries(instanceMcpServers)) {
-      if (agentRuntime.resolvedConfig.mcp.servers[name]) continue;
-      const env = expandMcpEnv(serverConfig.env);
-      const client = new McpClient(serverConfig.command, serverConfig.args ?? [], env);
-      await client.start();
-      mcpClients.push(client);
-      for (const tool of await createMcpTools(name, client)) {
-        toolRegistry.register(tool);
-      }
-    }
-  }
+  // MCP clients (agent-level only)
+  const mcpClients: McpClient[] = [...agentRuntime.mcpClients];
 
   // Initialize hooks
   const hooks = new ToolHookRegistryImpl();
@@ -403,12 +345,8 @@ async function main() {
   });
 
   // Resolve agent config
-  const agentId = agentRuntime?.name ?? 'default';
-  const agentConfig = agentRuntime?.primaryAgentConfig ?? config.agents['default'];
-  if (!agentConfig) {
-    console.error(boldRed('No default agent configured'));
-    process.exit(1);
-  }
+  const agentId = agentRuntime.name;
+  const agentConfig = agentRuntime.primaryAgentConfig;
 
   const provider = createProvider(agentConfig.provider);
   const model = agentConfig.model ?? provider.defaultModel;
@@ -421,7 +359,7 @@ async function main() {
     inlineAllowStore,
     toolRegistry,
     hooks,
-    agentConfigs: agentRuntime?.agentConfigs ?? config.agents,
+    agentConfigs: agentRuntime.agentConfigs,
     currentAgentConfig: agentConfig,
     providerFactory: createProvider,
   };
@@ -431,10 +369,10 @@ async function main() {
   }
 
   // Build system prompt (resolve paths relative to agent dir when available)
-  const systemPrompt = buildSystemPrompt(agentConfig, effectiveConfig, toolRegistry, undefined, skills, agentRuntime?.dir);
+  const systemPrompt = buildSystemPrompt(agentConfig, effectiveConfig, toolRegistry, undefined, skills, agentRuntime.dir);
 
-  const sessionsDir = agentRuntime?.sessionsDir ?? path.join(configDir, 'sessions');
-  const workspacePath = agentRuntime?.workspacePath ?? path.resolve(config.workspace.path);
+  const sessionsDir = agentRuntime.sessionsDir;
+  const workspacePath = agentRuntime.workspacePath;
 
   if (headless) {
     await runHeadless(cliArgs.prompt!, cliArgs.sessionId, systemPrompt, sessionsDir, agentId, provider, model, toolRegistry, hooks, agentConfig, makeCtx, skills, mcpClients);
@@ -459,9 +397,13 @@ async function runHeadless(
   mcpClients: McpClient[],
 ): Promise<void> {
   const chatId = sessionId ?? `headless-${Date.now()}`;
-  const messages: Message[] = sessionId
-    ? loadSession(sessionsDir, agentId, 'cli', chatId)
-    : [];
+  const normalizedHeadless = sessionId
+    ? normalizeMessages(loadSession(sessionsDir, agentId, 'cli', chatId))
+    : { messages: [], droppedToolMessages: 0, droppedToolCalls: 0 };
+  const messages: Message[] = normalizedHeadless.messages;
+  if (normalizedHeadless.droppedToolMessages > 0 || normalizedHeadless.droppedToolCalls > 0) {
+    console.warn('[warn] Session normalization removed incomplete tool artifacts.');
+  }
 
   // Set system prompt
   if (messages.length > 0 && messages[0].role === 'system') {
@@ -515,7 +457,11 @@ async function runRepl(
   agentRuntimeInfo?: AgentRuntime,
 ): Promise<void> {
   // Load session
-  const messages: Message[] = loadSession(sessionsDir, agentId, 'cli', 'repl');
+  const normalizedRepl = normalizeMessages(loadSession(sessionsDir, agentId, 'cli', 'repl'));
+  const messages: Message[] = normalizedRepl.messages;
+  if (normalizedRepl.droppedToolMessages > 0 || normalizedRepl.droppedToolCalls > 0) {
+    console.warn('[warn] Session normalization removed incomplete tool artifacts.');
+  }
 
   // Always refresh system prompt (replace if exists, insert if not)
   if (systemPrompt) {
@@ -583,7 +529,7 @@ async function runRepl(
           console.log(`  Dir:  ${agentRuntimeInfo.dir}`);
           console.log(`  Workspace: ${agentRuntimeInfo.workspacePath}`);
         } else {
-          console.log(`Agent: ${agentConfig.name} (legacy config mode)`);
+          console.log(`Agent: ${agentConfig.name}`);
         }
         console.log('');
         return prompt();
@@ -718,15 +664,6 @@ async function runRepl(
   };
 
   prompt();
-}
-
-function expandMcpEnv(env?: Record<string, string>): Record<string, string> | undefined {
-  if (!env) return undefined;
-  const result: Record<string, string> = {};
-  for (const [k, v] of Object.entries(env)) {
-    result[k] = v.replace(/\$\{(\w+)\}/g, (_match, varName) => process.env[varName] ?? '');
-  }
-  return result;
 }
 
 main().catch((err) => {

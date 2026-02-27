@@ -3,7 +3,7 @@ import { configExplainTool } from '../../src/tools/builtin/config-explain.js';
 import { createConfigGetTool } from '../../src/tools/builtin/config-get.js';
 import { createConfigSetTool } from '../../src/tools/builtin/config-set.js';
 import { ConfigManager } from '../../src/config/manager.js';
-import { defaultConfig } from '../../src/config/config.js';
+import { defaultInstanceConfig } from '../../src/config/config.js';
 import type { ToolContext } from '../../src/tools/types.js';
 
 vi.mock('../../src/config/config.js', async (importOriginal) => {
@@ -20,14 +20,14 @@ describe('config_explain', () => {
   it('returns all docs when no section specified', async () => {
     const result = await configExplainTool.execute(dummyCtx, {});
     expect(result.isError).toBe(false);
-    expect(result.forLLM).toContain('security.autonomy');
+    expect(result.forLLM).toContain('security.encrypt');
     expect(result.forLLM).toContain('monitoring.logLevel');
   });
 
   it('filters by section prefix', async () => {
     const result = await configExplainTool.execute(dummyCtx, { section: 'security' });
     expect(result.isError).toBe(false);
-    expect(result.forLLM).toContain('security.autonomy');
+    expect(result.forLLM).toContain('security.encrypt');
     expect(result.forLLM).not.toContain('monitoring.logLevel');
   });
 
@@ -41,17 +41,17 @@ describe('config_explain', () => {
 
 describe('config_get', () => {
   it('returns a specific value', async () => {
-    const config = defaultConfig();
+    const config = defaultInstanceConfig();
     const manager = new ConfigManager(config);
     const tool = createConfigGetTool(manager);
 
-    const result = await tool.execute(dummyCtx, { path: 'security.autonomy' });
+    const result = await tool.execute(dummyCtx, { path: 'security.encrypt' });
     expect(result.isError).toBe(false);
-    expect(result.forLLM).toContain('supervised');
+    expect(result.forLLM).toContain('true');
   });
 
   it('returns error for missing path', async () => {
-    const config = defaultConfig();
+    const config = defaultInstanceConfig();
     const manager = new ConfigManager(config);
     const tool = createConfigGetTool(manager);
 
@@ -61,7 +61,7 @@ describe('config_get', () => {
   });
 
   it('returns full config when no path specified', async () => {
-    const config = defaultConfig();
+    const config = defaultInstanceConfig();
     const manager = new ConfigManager(config);
     const tool = createConfigGetTool(manager);
 
@@ -73,7 +73,7 @@ describe('config_get', () => {
   });
 
   it('redacts API keys', async () => {
-    const config = defaultConfig();
+    const config = defaultInstanceConfig();
     config.providers.anthropic = { apiKey: 'sk-secret-key', defaultModel: 'claude-3' };
     const manager = new ConfigManager(config);
     const tool = createConfigGetTool(manager);
@@ -89,7 +89,7 @@ describe('config_get', () => {
 
 describe('config_set', () => {
   it('updates a non-security field without approval', async () => {
-    const config = defaultConfig();
+    const config = defaultInstanceConfig();
     const manager = new ConfigManager(config);
     const requestApproval = vi.fn();
     const tool = createConfigSetTool(manager, requestApproval);
@@ -102,32 +102,32 @@ describe('config_set', () => {
   });
 
   it('requires approval for security fields', async () => {
-    const config = defaultConfig();
+    const config = defaultInstanceConfig();
     const manager = new ConfigManager(config);
     const requestApproval = vi.fn().mockResolvedValue(true);
     const tool = createConfigSetTool(manager, requestApproval);
 
-    const result = await tool.execute(dummyCtx, { path: 'security.autonomy', value: 'full' });
+    const result = await tool.execute(dummyCtx, { path: 'security.encrypt', value: 'false' });
     expect(result.isError).toBe(false);
     expect(requestApproval).toHaveBeenCalledTimes(1);
-    expect(manager.get('security.autonomy')).toBe('full');
+    expect(manager.get('security.encrypt')).toBe(false);
   });
 
   it('denies when approval is rejected', async () => {
-    const config = defaultConfig();
+    const config = defaultInstanceConfig();
     const manager = new ConfigManager(config);
     const requestApproval = vi.fn().mockResolvedValue(false);
     const tool = createConfigSetTool(manager, requestApproval);
 
-    const result = await tool.execute(dummyCtx, { path: 'security.autonomy', value: 'full' });
+    const result = await tool.execute(dummyCtx, { path: 'security.encrypt', value: 'false' });
     expect(result.isError).toBe(true);
     expect(result.forLLM).toContain('denied');
     // Value should not change
-    expect(manager.get('security.autonomy')).toBe('supervised');
+    expect(manager.get('security.encrypt')).toBe(true);
   });
 
   it('rejects unknown paths', async () => {
-    const config = defaultConfig();
+    const config = defaultInstanceConfig();
     const manager = new ConfigManager(config);
     const tool = createConfigSetTool(manager, vi.fn());
 
@@ -137,16 +137,16 @@ describe('config_set', () => {
   });
 
   it('coerces string to boolean', async () => {
-    const config = defaultConfig();
+    const config = defaultInstanceConfig();
     const manager = new ConfigManager(config);
     const tool = createConfigSetTool(manager, vi.fn());
 
-    await tool.execute(dummyCtx, { path: 'memory.enabled', value: 'false' });
-    expect(manager.get('memory.enabled')).toBe(false);
+    await tool.execute(dummyCtx, { path: 'gateway.enabled', value: 'true' });
+    expect(manager.get('gateway.enabled')).toBe(true);
   });
 
   it('coerces string to number', async () => {
-    const config = defaultConfig();
+    const config = defaultInstanceConfig();
     const manager = new ConfigManager(config);
     const tool = createConfigSetTool(manager, vi.fn());
 

@@ -12,10 +12,6 @@ import {
   POLICY_DEFAULTS,
 } from './defaults.js';
 import { stripJsonc } from './config.js';
-import { LEGACY_AGENT_FIELDS } from './instance-schema.js';
-import { createLogger } from '../logging.js';
-
-const log = createLogger('agent-loader');
 
 const AGENT_CONFIG_FILE = 'bearclaw.jsonc';
 
@@ -63,14 +59,6 @@ export function loadAgentDirConfig(agentDir: string): ResolvedAgentDir {
     workspacePath,
     sessionsDir,
   };
-}
-
-/**
- * Check if the instance config has legacy agent-level fields,
- * indicating it needs backward-compat _default agent synthesis.
- */
-export function hasLegacyAgentFields(instanceConfig: Record<string, unknown>): boolean {
-  return LEGACY_AGENT_FIELDS.some(field => field in instanceConfig);
 }
 
 /**
@@ -230,14 +218,13 @@ export function buildResolvedConfig(
     }
   }
 
-  // Merge MCP servers
+  // Merge MCP servers (agent-level only)
   const mcpServers = {
-    ...(instanceConfig.mcp?.servers ?? {}),
     ...(agentConfig.mcp?.servers ?? {}),
   };
 
-  // Merge policy
-  const instancePolicy: PolicyConfig = instanceConfig.policy ?? {
+  // Merge policy (agent-level only + defaults)
+  const instancePolicy: PolicyConfig = {
     ...POLICY_DEFAULTS,
     rules: [],
   };
@@ -263,31 +250,5 @@ export function buildResolvedConfig(
     policy,
     schedules: agentConfig.schedules ?? [],
     monitoring: instanceConfig.monitoring,
-  };
-}
-
-/**
- * Build a ResolvedAgentDir from legacy instance config (_default agent).
- * Used for backward compatibility when no agent directory is found.
- */
-export function buildDefaultAgentDir(instanceConfig: BearClawConfig, configDir: string): ResolvedAgentDir {
-  const defaultAgent = instanceConfig.agents.default ?? Object.values(instanceConfig.agents)[0];
-  const name = '_default';
-  const workspacePath = path.resolve(instanceConfig.workspace.path);
-
-  return {
-    dir: configDir,
-    config: {
-      name,
-      provider: defaultAgent?.provider ?? 'anthropic',
-      model: defaultAgent?.model,
-      maxIterations: defaultAgent?.maxIterations,
-      maxTotalTokens: defaultAgent?.maxTotalTokens,
-      systemPromptFiles: defaultAgent?.systemPromptFiles,
-      workspace: workspacePath,
-    },
-    name,
-    workspacePath,
-    sessionsDir: path.join(configDir, 'sessions'),
   };
 }

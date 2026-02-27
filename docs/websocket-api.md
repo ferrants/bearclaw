@@ -465,6 +465,23 @@ Response to `remove_user_rule`.
 }
 ```
 
+### `notice` — Informational/warning note
+
+Emitted for non-fatal events the client may want to surface (e.g., session normalization).
+
+```json
+{
+  "type": "notice",
+  "level": "warn",
+  "code": "SESSION_NORMALIZED",
+  "message": "Session history was normalized to remove incomplete tool calls.",
+  "agentId": "default",
+  "chatId": "session-1",
+  "droppedToolMessages": 2,
+  "droppedToolCalls": 1
+}
+```
+
 ### `error` — Error
 
 ```json
@@ -575,6 +592,10 @@ ws.on('message', (data) => {
 
     case 'command_result':
       console.log(`[${msg.command}] ${msg.message}`);
+      break;
+
+    case 'notice':
+      console.log(`[${msg.level}] ${msg.code}: ${msg.message}`);
       break;
 
     case 'error':

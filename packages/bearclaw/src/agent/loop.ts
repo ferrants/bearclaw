@@ -57,6 +57,7 @@ export async function runAgentLoop(
   let cacheWriteTokens = 0;
   const toolsUsed: Array<{ name: string; result: ToolResult }> = [];
   const maxContextTokens = config.maxContextTokens ?? MODEL_CONTEXT_LIMITS[model] ?? 128000;
+  let contextTokens = 0;
 
   while (iteration < maxIterations) {
     iteration++;
@@ -69,7 +70,7 @@ export async function runAgentLoop(
     }
 
     // Emit thinking status before LLM call (estimate context size from message content)
-    let contextTokens = Math.ceil(messages.reduce((sum, m) => sum + m.content.length, 0) / 4);
+    contextTokens = Math.ceil(messages.reduce((sum, m) => sum + m.content.length, 0) / 4);
     eventBus?.emit('agent:status', { agentId: evAgentId, chatId: evChatId, status: 'thinking', contextTokens, maxContextTokens });
 
     // Call LLM

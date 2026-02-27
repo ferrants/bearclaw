@@ -1,5 +1,5 @@
 import { useEffect, useCallback, useRef, useState } from "react"
-import type { InputRenderable, ScrollBoxRenderable } from "@opentui/core"
+import type { ScrollBoxRenderable, TextareaRenderable } from "@opentui/core"
 import { useKeyboard, useRenderer } from "@opentui/react"
 import { useChatState } from "./hooks/useChatState"
 import { useWebSocket } from "./hooks/useWebSocket"
@@ -27,12 +27,13 @@ export function App() {
   // Refs updated synchronously in onInput so useKeyboard always has current data
   const inputValueRef = useRef(inputValue)
   const apiKeyInputRef = useRef(apiKeyInput)
-  const chatInputRef = useRef<InputRenderable>(null)
+  const chatInputRef = useRef<TextareaRenderable>(null)
   const scrollBoxRef = useRef<ScrollBoxRenderable>(null)
   const currentChatIdRef = useRef(currentChatId)
   currentChatIdRef.current = currentChatId
   // Track whether we're waiting for the first response to a new chat
   const awaitingNewChatRef = useRef(false)
+  const autoLoadChatsRef = useRef(false)
   const sendRef = useRef<(msg: any) => void>(() => {})
 
   // Slash menu state — driven by the live ref, not React state
@@ -139,9 +140,25 @@ export function App() {
       case "command_result":
         dispatch({ type: "COMMAND_RESULT", command: msg.command, message: msg.message })
         break
+      case "notice":
+        dispatch({ type: "NOTICE", level: msg.level, code: msg.code, message: msg.message })
+        break
       case "chat_list":
         log("[sessions]", "received", msg.chats.length, "chats")
-        dispatch({ type: "SESSIONS_LOADED", chats: msg.chats })
+        if (autoLoadChatsRef.current && !currentChatIdRef.current) {
+          dispatch({ type: "SESSIONS_RECEIVED", chats: msg.chats })
+          const chats = msg.chats
+          const filtered = currentAgentId
+            ? chats.filter(c => c.agentId === currentAgentId)
+            : chats
+          const latest = filtered[0]
+          if (latest) {
+            sendRef.current({ type: "get_chat_history", id: String(Date.now()), chatId: latest.chatId, agentId: latest.agentId, channel: latest.channel })
+          }
+          autoLoadChatsRef.current = false
+        } else {
+          dispatch({ type: "SESSIONS_LOADED", chats: msg.chats })
+        }
         break
       case "mentionables": {
         const agentItems = msg.items.filter((item: Mentionable) => item.type === "agent")
@@ -233,6 +250,8 @@ export function App() {
     if (connectionStatus === "connected") {
       log("[agents]", "sending query_mentionables")
       send({ type: "query_mentionables", id: String(Date.now()) })
+      autoLoadChatsRef.current = true
+      send({ type: "list_chats", id: String(Date.now()) })
     }
   }, [connectionStatus])
 
@@ -243,7 +262,99 @@ export function App() {
     setSlashMenuIndex(0)
   }, [])
 
+  const handleSubmit = useCallback(() => {
+    const currentInput = inputValueRef.current
+
+    // If slash menu is showing, pick the selected command
+    if (slashMenuVisible && mode === "chat") {
+      const filtered = filterCommands(currentInput)
+      if (filtered.length > 0) {
+        const cmd = filtered[slashMenuIndex]
+        dispatch({ type: "SET_INPUT", value: cmd.name })
+        inputValueRef.current = cmd.name
+        setSlashFilter("")
+        setSlashMenuIndex(0)
+        return
+      }
+    }
+
+    if (mode !== "chat") return
+
+    const text = currentInput.trim()
+    if (!text) return
+
+    if (text === "/exit" || text === "/quit" || text === ":q") {
+      renderer.destroy()
+      process.exit(0)
+      return
+    }
+    if (text === "/new") {
+      const payload: any = { type: "message", id: String(Date.now()), message: "/new" }
+      if (currentAgentId) payload.agentId = currentAgentId
+      send(payload)
+      dispatch({ type: "NEW_CHAT" })
+      dispatch({ type: "SET_INPUT", value: "" })
+      inputValueRef.current = ""
+      setSlashFilter("")
+      if (chatInputRef.current) {
+        chatInputRef.current.editBuffer.setText("")
+      }
+      return
+    }
+    if (text === "/sessions" || text === "/agents") {
+      send({ type: "list_chats", id: String(Date.now()) })
+      dispatch({ type: "SET_INPUT", value: "" })
+      inputValueRef.current = ""
+      setSlashFilter("")
+      if (chatInputRef.current) {
+        chatInputRef.current.editBuffer.setText("")
+      }
+      return
+    }
+    if (text === "/theme") {
+      dispatch({ type: "CYCLE_THEME" })
+      dispatch({ type: "SET_INPUT", value: "" })
+      inputValueRef.current = ""
+      setSlashFilter("")
+      if (chatInputRef.current) {
+        chatInputRef.current.editBuffer.setText("")
+      }
+      return
+    }
+    if (text === "/dashboard") {
+      dispatch({ type: "SET_MODE", mode: "dashboard" })
+      dispatch({ type: "SET_INPUT", value: "" })
+      inputValueRef.current = ""
+      setSlashFilter("")
+      if (chatInputRef.current) {
+        chatInputRef.current.editBuffer.setText("")
+      }
+      return
+    }
+
+    const msgPayload: any = { type: "message", id: String(Date.now()), message: text }
+    if (currentChatId) {
+      msgPayload.chatId = currentChatId
+    } else {
+      awaitingNewChatRef.current = true
+    }
+    if (currentAgentId) {
+      msgPayload.agentId = currentAgentId
+    }
+    send(msgPayload)
+    dispatch({ type: "SEND_MESSAGE" })
+    inputValueRef.current = ""
+    setSlashFilter("")
+    if (chatInputRef.current) {
+      chatInputRef.current.editBuffer.setText("")
+    }
+  }, [currentAgentId, currentChatId, mode, renderer, send, slashMenuIndex, slashMenuVisible])
+
   useKeyboard((key) => {
+    if (key.eventType === "release") return
+    if (key.name === "enter" || key.name === "return") {
+      log("[key]", "enter", { shift: key.shift, ctrl: key.ctrl, meta: key.meta, option: key.option, sequence: key.sequence, raw: key.raw })
+    }
     // Ctrl+\ toggles sessions sidebar (\x1c is the raw char for ctrl+\)
     if (key.name === "\x1c") {
       if (sessionsSidebarOpen) {
@@ -400,98 +511,12 @@ export function App() {
       // Enter to accept and submit would be handled below in the deferred handler
     }
 
-    // Deferred so input's onChange flushes before we read the value
     if (key.name === "enter" || key.name === "return") {
-      setTimeout(() => {
-        const currentInput = inputValueRef.current
-
-        // If slash menu is showing, pick the selected command
-        if (slashMenuVisible && mode === "chat") {
-          const filtered = filterCommands(currentInput)
-          if (filtered.length > 0) {
-            const cmd = filtered[slashMenuIndex]
-            dispatch({ type: "SET_INPUT", value: cmd.name })
-            inputValueRef.current = cmd.name
-            setSlashFilter("")
-            setSlashMenuIndex(0)
-            return
-          }
-        }
-
-        if (mode === "chat") {
-          const text = currentInput.trim()
-          if (text) {
-            if (text === "/exit" || text === "/quit" || text === ":q") {
-              renderer.destroy()
-              process.exit(0)
-              return
-            }
-            if (text === "/new") {
-              // Tell the server to create a new chat, then clear client state
-              const payload: any = { type: "message", id: String(Date.now()), message: "/new" }
-              if (currentAgentId) payload.agentId = currentAgentId
-              send(payload)
-              dispatch({ type: "NEW_CHAT" })
-              dispatch({ type: "SET_INPUT", value: "" })
-              inputValueRef.current = ""
-              setSlashFilter("")
-              if (chatInputRef.current) {
-                chatInputRef.current.value = ""
-              }
-              return
-            }
-            if (text === "/sessions" || text === "/agents") {
-              send({ type: "list_chats", id: String(Date.now()) })
-              dispatch({ type: "SET_INPUT", value: "" })
-              inputValueRef.current = ""
-              setSlashFilter("")
-              if (chatInputRef.current) {
-                chatInputRef.current.value = ""
-              }
-              return
-            }
-            if (text === "/theme") {
-              dispatch({ type: "CYCLE_THEME" })
-              dispatch({ type: "SET_INPUT", value: "" })
-              inputValueRef.current = ""
-              setSlashFilter("")
-              if (chatInputRef.current) {
-                chatInputRef.current.value = ""
-              }
-              return
-            }
-            if (text === "/dashboard") {
-              dispatch({ type: "SET_MODE", mode: "dashboard" })
-              dispatch({ type: "SET_INPUT", value: "" })
-              inputValueRef.current = ""
-              setSlashFilter("")
-              if (chatInputRef.current) {
-                chatInputRef.current.value = ""
-              }
-              return
-            }
-            const msgPayload: any = { type: "message", id: String(Date.now()), message: text }
-            if (currentChatId) {
-              msgPayload.chatId = currentChatId
-            } else {
-              awaitingNewChatRef.current = true
-            }
-            if (currentAgentId) {
-              msgPayload.agentId = currentAgentId
-            }
-            send(msgPayload)
-            dispatch({ type: "SEND_MESSAGE" })
-            inputValueRef.current = ""
-            setSlashFilter("")
-            if (chatInputRef.current) {
-              chatInputRef.current.value = ""
-            }
-          }
-        }
-      }, 0)
-      return
+      if (mode === "chat") {
+        return
+      }
     }
-  })
+  }, { release: true })
 
   // API key setup screen
   if (!token) {
@@ -570,7 +595,9 @@ export function App() {
               dispatch({ type: "SET_INPUT", value: v })
             }}
             onInput={handleInput}
+            onSubmit={handleSubmit}
             focused={mode === "chat"}
+            maxWidth={showSidebar ? renderer.width - 30 : renderer.width}
           />
         </box>
       )}

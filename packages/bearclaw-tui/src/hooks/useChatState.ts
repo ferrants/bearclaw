@@ -41,8 +41,10 @@ export type ChatAction =
   | { type: "APPROVAL_REJECTED" }
   | { type: "SCHEDULE_TRIGGERED"; schedule: string; agentId: string; message: string }
   | { type: "COMMAND_RESULT"; command: string; message: string }
+  | { type: "NOTICE"; level: "info" | "warn"; code: string; message: string }
   | { type: "WS_ERROR"; message: string }
   | { type: "SESSIONS_LOADED"; chats: ChatSummary[] }
+  | { type: "SESSIONS_RECEIVED"; chats: ChatSummary[] }
   | { type: "SESSION_SELECT_MOVE"; delta: number }
   | { type: "SESSION_SELECTED"; chatId: string; agentId: string | null; messages: Message[] }
   | { type: "ADOPT_CHAT_ID"; chatId: string }
@@ -209,6 +211,16 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
       return { ...state, messages: [...state.messages, msg] }
     }
 
+    case "NOTICE": {
+      const msg: Message = {
+        id: `notice-${Date.now()}`,
+        role: "system",
+        content: `[${action.level}] ${action.code}: ${action.message}`,
+        timestamp: Date.now(),
+      }
+      return { ...state, messages: [...state.messages, msg] }
+    }
+
     case "WS_ERROR": {
       const errMsg: Message = {
         id: `error-${Date.now()}`,
@@ -230,6 +242,18 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
       }
       const deduped = [...seen.values()]
       return { ...state, sessions: deduped, sessionIndex: 0, mode: "sessions", sessionsSidebarOpen: true }
+    }
+
+    case "SESSIONS_RECEIVED": {
+      const seen = new Map<string, ChatSummary>()
+      for (const chat of action.chats) {
+        const existing = seen.get(chat.chatId)
+        if (!existing || chat.lastModified > existing.lastModified) {
+          seen.set(chat.chatId, chat)
+        }
+      }
+      const deduped = [...seen.values()]
+      return { ...state, sessions: deduped, sessionIndex: 0 }
     }
 
     case "SESSION_SELECT_MOVE": {

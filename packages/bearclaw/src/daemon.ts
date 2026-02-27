@@ -1,13 +1,10 @@
 #!/usr/bin/env node
 
 import * as path from 'node:path';
-import { loadConfig, getConfigDir, encryptConfigSecrets, loadInstanceConfig } from './config/config.js';
+import { getConfigDir, encryptConfigSecrets, loadInstanceConfig } from './config/config.js';
 import { setLogLevel, createLogger } from './logging.js';
 import { EventBus } from './events.js';
 import { SecretStore } from './security/secrets.js';
-import { SecurityPolicy } from './security/policy.js';
-import { ScopedRateLimiter } from './security/rate-limiter.js';
-import { PolicyEngine } from './security/policy-engine.js';
 import { ApprovalManager } from './security/approvals.js';
 import { InlineAllowStore } from './security/inline-allow.js';
 import { PairingGuard } from './security/pairing.js';
@@ -35,9 +32,9 @@ import { ConfigManager } from './config/manager.js';
 import { runAgentLoop } from './agent/loop.js';
 import { buildSystemPrompt } from './agent/context.js';
 import { loadSession, saveSession, clearSession, listChats } from './agent/session.js';
+import { normalizeMessages } from './agent/normalize-messages.js';
 import type { SessionProvider } from './gateway/ws-handler.js';
-import { loadSkills } from './skills/index.js';
-import { McpClient, createMcpTools } from './mcp/index.js';
+import type { McpClient } from './mcp/index.js';
 import { MessageBus } from './bus/bus.js';
 import { CliChannel } from './channels/cli.js';
 import type { Channel } from './channels/types.js';
@@ -56,102 +53,92 @@ import { handleConfig, handleNew, handleSkill } from './commands/handlers.js';
 import type { ServerMessage_CommandResult } from './gateway/ws-protocol.js';
 import { UserRuleStore } from './security/user-rules.js';
 import { AgentRegistry } from './config/agent-registry.js';
-import { loadAgentDirConfig, buildResolvedConfig } from './config/agent-loader.js';
-import { createAgentRuntime, createDefaultAgentRuntime } from './config/agent-runtime-factory.js';
+import { loadAgentDirConfig } from './config/agent-loader.js';
+import { createAgentRuntime } from './config/agent-runtime-factory.js';
 import type { AgentRuntime } from './config/agent-runtime.js';
+import { POLICY_DEFAULTS } from './config/defaults.js';
 
 const log = createLogger('daemon');
 
 async function main() {
-  const config = loadConfig();
   const configDir = getConfigDir();
-  setLogLevel(config.monitoring.logLevel);
+  const instanceConfig = loadInstanceConfig();
+  setLogLevel(instanceConfig.monitoring.logLevel);
 
   log.info('BearClaw daemon starting');
 
   // 1. Initialize secrets and encrypt any plaintext keys
-  const secrets = new SecretStore(configDir, config.security.encrypt);
-  if (config.security.encrypt) {
-    encryptConfigSecrets(config, (v) => secrets.encrypt(v), SecretStore.isEncrypted);
+  const secrets = new SecretStore(configDir, instanceConfig.security.encrypt);
+  if (instanceConfig.security.encrypt) {
+    encryptConfigSecrets(instanceConfig, (v) => secrets.encrypt(v), SecretStore.isEncrypted);
   }
 
-  // 2. Build AgentRegistry from CLI args or legacy config
+  // 2. Build AgentRegistry from CLI args
   const agentRegistry = new AgentRegistry();
-  const instanceConfig = loadInstanceConfig();
 
   // Parse agent dirs from CLI args (e.g., bearclaw daemon ~/agents/a1 ~/agents/a2)
   const agentDirArgs = process.argv.slice(2).filter(a => !a.startsWith('-'));
 
-  if (agentDirArgs.length > 0) {
-    // Multi-agent mode: each arg is an agent directory
-    for (const dirArg of agentDirArgs) {
-      const agentDirInfo = loadAgentDirConfig(path.resolve(dirArg));
-      const runtime = await createAgentRuntime({
-        agentDir: agentDirInfo,
-        instanceConfig,
-        configDir,
-      });
-      agentRegistry.register(runtime);
-      log.info('Loaded agent', { name: runtime.name, dir: runtime.dir });
-    }
-  } else {
-    // Legacy mode: create _default runtime from config
-    const defaultRuntime = await createDefaultAgentRuntime(config, configDir);
-    agentRegistry.register(defaultRuntime);
-    // Also register any additional agents from legacy config
-    for (const [id, agentConfig] of Object.entries(config.agents)) {
-      if (id === 'default' || id === '_default') continue;
-      // These are sub-agents within the default runtime, not separate runtimes
-    }
-    log.info('Using legacy config mode');
+  if (agentDirArgs.length === 0) {
+    log.error('No agent directories provided. Pass one or more agent dirs to the daemon.');
+    process.exit(1);
   }
 
-  // 3. Shared security (for legacy mode / fallback)
-  const rateLimiter = new ScopedRateLimiter(config.security.rateLimits);
-  const policy = new SecurityPolicy(
-    config.security.autonomy,
-    path.resolve(config.workspace.path),
-    config.security.workspaceOnly,
-    config.security.allowedCommands,
-    config.security.restrictedCommands,
-    config.security.forbiddenPaths,
-    config.security.allowedPaths,
-    rateLimiter,
-    config.security.allowSubshells,
-  );
-  const policyEngine = new PolicyEngine(config.policy, configDir);
+  // Multi-agent mode: each arg is an agent directory
+  for (const dirArg of agentDirArgs) {
+    const agentDirInfo = loadAgentDirConfig(path.resolve(dirArg));
+    const runtime = await createAgentRuntime({
+      agentDir: agentDirInfo,
+      instanceConfig,
+      configDir,
+    });
+    agentRegistry.register(runtime);
+    log.info('Loaded agent', { name: runtime.name, dir: runtime.dir });
+  }
+
+  // 3. Shared stores
   const userRuleStore = new UserRuleStore(configDir);
 
   // Sync user rules into all PolicyEngine instances
   const syncUserRules = () => {
     const rules = userRuleStore.toPolicyRules();
-    policyEngine.setUserRules(rules);
     for (const runtime of agentRegistry.all()) {
       runtime.policyEngine.setUserRules(rules);
     }
   };
   syncUserRules();
 
-  const approvalManager = new ApprovalManager(
-    config.policy.approvalScope,
-    config.policy.approvals.defaultTTLSeconds,
-    config.policy.approvals.cache,
+  const fallbackApprovalManager = new ApprovalManager(
+    POLICY_DEFAULTS.approvalScope,
+    POLICY_DEFAULTS.approvals.defaultTTLSeconds,
+    POLICY_DEFAULTS.approvals.cache,
   );
-  const inlineAllowStore = new InlineAllowStore(
-    config.policy.inlineAllow.enabled,
-    config.policy.inlineAllow.dayScopeHours,
+  const fallbackInlineAllowStore = new InlineAllowStore(
+    POLICY_DEFAULTS.inlineAllow.enabled,
+    POLICY_DEFAULTS.inlineAllow.dayScopeHours,
   );
+  const approvalManagers = new Map<string, ApprovalManager>();
+  for (const runtime of agentRegistry.all()) {
+    approvalManagers.set(
+      runtime.name,
+      new ApprovalManager(
+        runtime.resolvedConfig.policy.approvalScope,
+        runtime.resolvedConfig.policy.approvals.defaultTTLSeconds,
+        runtime.resolvedConfig.policy.approvals.cache,
+      ),
+    );
+  }
   const pairing = new PairingGuard(configDir, secrets);
 
   // Load static API keys into pairing guard
-  if (config.gateway.apiKeys) {
-    for (const entry of config.gateway.apiKeys) {
+  if (instanceConfig.gateway.apiKeys) {
+    for (const entry of instanceConfig.gateway.apiKeys) {
       if (entry.key) {
         pairing.addStaticKey(entry.label, secrets.decrypt(entry.key));
       }
     }
-    if (config.gateway.apiKeys.length > 0) {
-      log.info('Loaded static API keys', { count: config.gateway.apiKeys.length });
+    if (instanceConfig.gateway.apiKeys.length > 0) {
+      log.info('Loaded static API keys', { count: instanceConfig.gateway.apiKeys.length });
     }
   }
 
@@ -162,22 +149,22 @@ async function main() {
   function createProvider(name: string): LLMProvider {
     switch (name) {
       case 'anthropic': {
-        const cfg = config.providers.anthropic;
+        const cfg = instanceConfig.providers.anthropic;
         if (!cfg) throw new Error('Anthropic provider not configured');
         return new AnthropicProvider(secrets.decrypt(cfg.apiKey), cfg.defaultModel);
       }
       case 'openai': {
-        const cfg = config.providers.openai;
+        const cfg = instanceConfig.providers.openai;
         if (!cfg) throw new Error('OpenAI provider not configured');
         return new OpenAIProvider(secrets.decrypt(cfg.apiKey), cfg.defaultModel);
       }
       case 'ollama': {
-        const cfg = config.providers.ollama;
+        const cfg = instanceConfig.providers.ollama;
         if (!cfg) throw new Error('Ollama provider not configured');
         return new OllamaProvider(cfg.baseUrl, cfg.defaultModel);
       }
       case 'cli-delegation': {
-        const cfg = config.providers.cliDelegation;
+        const cfg = instanceConfig.providers.cliDelegation;
         if (!cfg) throw new Error('CLI delegation provider not configured');
         log.warn('CLI delegation bypasses BearClaw security model');
         return new CliDelegationProvider(cfg);
@@ -205,7 +192,11 @@ async function main() {
 
   // Config tools (hidden until explicitly activated)
   const defaultRuntime = agentRegistry.getDefault();
-  const configManager = new ConfigManager(config, defaultRuntime?.dir);
+  if (!defaultRuntime) {
+    log.error('No agents loaded. Check your daemon arguments.');
+    process.exit(1);
+  }
+  const configManager = new ConfigManager(instanceConfig, defaultRuntime.dir);
   toolRegistry.registerHidden(configExplainTool);
   toolRegistry.registerHidden(createConfigGetTool(configManager));
   toolRegistry.registerHidden(createConfigSetTool(configManager, async () => {
@@ -214,21 +205,11 @@ async function main() {
     return false;
   }));
 
-  // 6b. Load skills (aggregate from all runtimes for legacy mode, or per-runtime)
-  const skills = defaultRuntime?.skills ?? loadSkills(path.resolve(config.workspace.path), configDir);
+  // 6b. Load skills from the default runtime (used for mentionables)
+  const skills = defaultRuntime.skills;
 
-  // 6c. Start instance-level MCP servers
+  // 6c. Collect all MCP clients from agent runtimes
   const mcpClients: McpClient[] = [];
-  for (const [name, serverConfig] of Object.entries(config.mcp.servers)) {
-    const env = expandMcpEnv(serverConfig.env);
-    const client = new McpClient(serverConfig.command, serverConfig.args ?? [], env);
-    await client.start();
-    mcpClients.push(client);
-    for (const tool of await createMcpTools(name, client)) {
-      toolRegistry.register(tool);
-    }
-  }
-  // Collect all MCP clients from agent runtimes
   for (const runtime of agentRegistry.all()) {
     mcpClients.push(...runtime.mcpClients);
   }
@@ -248,8 +229,8 @@ async function main() {
     // Use the per-agent policy engine if available
     const agentName = ctx.currentAgentConfig.name;
     const runtime = agentRegistry.get(agentName);
-    const effectivePolicyEngine = runtime?.policyEngine ?? policyEngine;
-    const effectiveInlineAllowStore = runtime?.inlineAllowStore ?? inlineAllowStore;
+    const effectivePolicyEngine = runtime?.policyEngine ?? defaultRuntime.policyEngine;
+    const effectiveInlineAllowStore = runtime?.inlineAllowStore ?? fallbackInlineAllowStore;
 
     const decision = effectivePolicyEngine.evaluate({
       toolName,
@@ -287,7 +268,7 @@ async function main() {
 
       // WebSocket approval flow
       if (wsHandler) {
-        const approvalMode = config.gateway.approvalMode ?? 'auto-approve';
+        const approvalMode = instanceConfig.gateway.approvalMode ?? 'auto-approve';
 
         if (wsHandler.hasClients() || approvalMode === 'wait') {
           const { requestId, decision: approvalDecision } = approvalBridge.requestApproval({
@@ -347,14 +328,10 @@ async function main() {
         clearSession(runtime.sessionsDir, id, channelName, chatId);
       }
     }
-    // Also clear legacy sessions
-    for (const id of Object.keys(config.agents)) {
-      clearSession(path.join(configDir, 'sessions'), id, channelName, chatId);
-    }
     log.info('Sessions cleared', { channel: channelName, chatId });
   };
 
-  if (config.channels.enabled.includes('cli')) {
+  if (instanceConfig.channels.enabled.includes('cli')) {
     channels.push(new CliChannel({
       onClearSession: (chatId) => clearAllAgentSessions('cli', chatId),
     }));
@@ -389,21 +366,20 @@ async function main() {
       for (const runtime of agentRegistry.all()) {
         all.push(...listChats(runtime.sessionsDir, filter));
       }
-      all.push(...listChats(path.join(configDir, 'sessions'), filter));
       return all.sort((a, b) => b.lastModified - a.lastModified);
     },
     getChatHistory(agentId, channel, chatId) {
       const runtime = agentRegistry.get(agentId);
-      const sessDir = runtime?.sessionsDir ?? path.join(configDir, 'sessions');
-      return loadSession(sessDir, agentId, channel, chatId);
+      if (!runtime) return [];
+      return loadSession(runtime.sessionsDir, agentId, channel, chatId);
     },
   };
 
   let wsHandler: WsHandler | null = null;
   const statsCollector = new StatsCollector(eventBus, sessionProvider, approvalBridge);
-  if (config.gateway.enabled) {
+  if (instanceConfig.gateway.enabled) {
     wsHandler = new WsHandler(
-      bus, pairing, config.gateway.requirePairing,
+      bus, pairing, instanceConfig.gateway.requirePairing,
       eventBus, approvalBridge, mentionablesProvider,
       (agentId, toolName, scope) => {
         if (scope === 'always') {
@@ -411,7 +387,7 @@ async function main() {
           return;
         }
         const runtime = agentRegistry.get(agentId);
-        const store = runtime?.inlineAllowStore ?? inlineAllowStore;
+        const store = runtime?.inlineAllowStore ?? fallbackInlineAllowStore;
         store.addAllow(toolName, scope);
         log.info('Allow registered from approval', { agentId, toolName, scope });
       },
@@ -437,7 +413,7 @@ async function main() {
     );
     wsHandler.setSessionProvider(sessionProvider);
 
-    const gateway = new GatewayServer(config.gateway, bus, pairing);
+    const gateway = new GatewayServer(instanceConfig.gateway, bus, pairing);
     gateway.setWsHandler(wsHandler);
     gateway.setMentionables(mentionablesProvider);
     gateway.setSessionProvider(sessionProvider);
@@ -455,7 +431,7 @@ async function main() {
     const scheduler = new Scheduler(allSchedules, bus, eventBus, abortController.signal, (rule, _chatId) => {
       if (rule.allow && rule.allow.length > 0) {
         const runtime = agentRegistry.get(rule.agent ?? agentRegistry.getDefault()?.name ?? '');
-        const store = runtime?.inlineAllowStore ?? inlineAllowStore;
+        const store = runtime?.inlineAllowStore ?? fallbackInlineAllowStore;
         for (const toolName of rule.allow) {
           store.addAllow(toolName, 'session');
         }
@@ -499,7 +475,7 @@ async function main() {
 
       // Parse inline allows (per-agent if available)
       const targetRuntime = requestedAgent ? agentRegistry.get(requestedAgent) : agentRegistry.getDefault();
-      const effectiveInlineAllowStore = targetRuntime?.inlineAllowStore ?? inlineAllowStore;
+      const effectiveInlineAllowStore = targetRuntime?.inlineAllowStore ?? fallbackInlineAllowStore;
       const cleaned = effectiveInlineAllowStore.parseAndStore(message);
 
       // Aggregate skills from target runtime for slash command parsing
@@ -557,15 +533,23 @@ async function main() {
               processAgentMessage(targetAgent, slashCmd.args, channel, chatId, sender, undefined, result.messages);
             } else {
               const defRuntime = agentRegistry.getDefault();
-              const agentId = requestedAgent ?? defRuntime?.name ?? '_default';
+              const agentId = requestedAgent ?? defRuntime?.name;
+              if (!agentId) {
+                bus.publishOutbound({ channel, chatId, content: 'No agent available for configuration mode.' });
+                continue;
+              }
               const resolved = resolveRuntime(agentId);
-              const sessDir = resolved?.runtime.sessionsDir ?? path.join(configDir, 'sessions');
+              if (!resolved) {
+                bus.publishOutbound({ channel, chatId, content: `Unknown agent: ${agentId}` });
+                continue;
+              }
+              const sessDir = resolved.runtime.sessionsDir;
               const messages = loadSession(sessDir, agentId, channel, chatId);
-              const effectiveConfig = resolved?.runtime.resolvedConfig ?? config;
+              const effectiveConfig = resolved.runtime.resolvedConfig;
               const systemPrompt = buildSystemPrompt(
-                resolved?.agentConfig ?? config.agents[agentId] ?? config.agents['default'],
+                resolved.agentConfig,
                 effectiveConfig, toolRegistry, undefined, effectiveSkills,
-                resolved?.runtime.dir,
+                resolved.runtime.dir,
               );
               if (systemPrompt) {
                 if (messages.length > 0 && messages[0].role === 'system') {
@@ -600,15 +584,23 @@ async function main() {
               processAgentMessage(targetAgent, slashCmd.args, channel, chatId, sender, undefined, result.messages);
             } else {
               const defRuntime = agentRegistry.getDefault();
-              const agentId = requestedAgent ?? defRuntime?.name ?? '_default';
+              const agentId = requestedAgent ?? defRuntime?.name;
+              if (!agentId) {
+                bus.publishOutbound({ channel, chatId, content: 'No agent available for skill activation.' });
+                continue;
+              }
               const resolved = resolveRuntime(agentId);
-              const sessDir = resolved?.runtime.sessionsDir ?? path.join(configDir, 'sessions');
+              if (!resolved) {
+                bus.publishOutbound({ channel, chatId, content: `Unknown agent: ${agentId}` });
+                continue;
+              }
+              const sessDir = resolved.runtime.sessionsDir;
               const messages = loadSession(sessDir, agentId, channel, chatId);
-              const effectiveConfig = resolved?.runtime.resolvedConfig ?? config;
+              const effectiveConfig = resolved.runtime.resolvedConfig;
               const systemPrompt = buildSystemPrompt(
-                resolved?.agentConfig ?? config.agents[agentId] ?? config.agents['default'],
+                resolved.agentConfig,
                 effectiveConfig, toolRegistry, undefined, effectiveSkills,
-                resolved?.runtime.dir,
+                resolved.runtime.dir,
               );
               if (systemPrompt) {
                 if (messages.length > 0 && messages[0].role === 'system') {
@@ -699,6 +691,7 @@ async function main() {
     const model = agentConfig.model ?? provider.defaultModel;
     log.info('Processing message', { agentId, provider: agentConfig.provider, model, channel });
 
+    const approvalManager = approvalManagers.get(runtime.name) ?? fallbackApprovalManager;
     const ctx = {
       signal: abortController.signal,
       channel,
@@ -716,7 +709,25 @@ async function main() {
 
     // Load session and build context (always refresh system prompt)
     const sessionsDir = runtime.sessionsDir;
-    const messages = loadSession(sessionsDir, agentId, channel, chatId);
+    const normalized = normalizeMessages(loadSession(sessionsDir, agentId, channel, chatId));
+    const messages = normalized.messages;
+    if (normalized.droppedToolMessages > 0 || normalized.droppedToolCalls > 0) {
+      log.warn('Session normalization dropped tool artifacts', {
+        agentId,
+        chatId,
+        droppedToolMessages: normalized.droppedToolMessages,
+        droppedToolCalls: normalized.droppedToolCalls,
+      });
+      eventBus?.emit('notice', {
+        level: 'warn',
+        code: 'SESSION_NORMALIZED',
+        message: 'Session history was normalized to remove incomplete tool calls.',
+        agentId,
+        chatId,
+        droppedToolMessages: normalized.droppedToolMessages,
+        droppedToolCalls: normalized.droppedToolCalls,
+      });
+    }
     const effectiveSkills = runtime.skills;
     const systemPrompt = buildSystemPrompt(
       agentConfig, runtime.resolvedConfig, toolRegistry, undefined, effectiveSkills,
@@ -812,7 +823,7 @@ async function main() {
         chatId,
         message: (err as Error).message,
       });
-      eventBus.emit('agent:status', { agentId, chatId, status: 'idle' });
+      eventBus.emit('agent:status', { agentId, chatId, status: 'idle', contextTokens: 0, maxContextTokens: 0 });
       bus.publishOutbound({
         channel,
         chatId,
@@ -865,21 +876,12 @@ async function main() {
 
   log.info('BearClaw daemon started', {
     agents: agentRegistry.names(),
-    channels: config.channels.enabled,
+    channels: instanceConfig.channels.enabled,
     schedules: allSchedules.length,
   });
 
   // Start loops
   await Promise.all([inboundLoop(), outboundLoop()]);
-}
-
-function expandMcpEnv(env?: Record<string, string>): Record<string, string> | undefined {
-  if (!env) return undefined;
-  const result: Record<string, string> = {};
-  for (const [k, v] of Object.entries(env)) {
-    result[k] = v.replace(/\$\{(\w+)\}/g, (_match, varName) => process.env[varName] ?? '');
-  }
-  return result;
 }
 
 main().catch((err) => {

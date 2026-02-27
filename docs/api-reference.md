@@ -4,9 +4,52 @@ TypeScript interfaces and types that define BearClaw's public API.
 
 ## Config Types
 
+### InstanceConfig
+
+Instance-level configuration loaded from `~/.bearclaw/config.jsonc`. See [Configuration](configuration.md) for usage.
+
+```typescript
+interface InstanceConfig {
+  providers: {
+    anthropic?: { apiKey: string; defaultModel: string };
+    openai?: { apiKey: string; defaultModel: string };
+    ollama?: { baseUrl: string; defaultModel: string };
+    cliDelegation?: CliDelegationConfig;
+  };
+  gateway: {
+    enabled: boolean;
+    host: string;
+    port: number;
+    bodyLimit: number;
+    timeout: number;
+    requirePairing: boolean;
+    allowPublicBind: boolean;
+    approvalMode?: 'auto-approve' | 'auto-deny' | 'wait';
+    apiKeys?: Array<{ label: string; key: string }>;
+  };
+  channels: {
+    enabled: string[];
+  };
+  security: {
+    encrypt: boolean;
+    forbiddenPaths: string[];
+    allowedPaths?: string[];
+    rateLimits: {
+      global: number;
+      perAgent?: number;
+      perToolClass?: Record<string, number>;
+    };
+  };
+  monitoring: {
+    logLevel: 'debug' | 'info' | 'warn' | 'error';
+    heartbeatInterval: number;
+  };
+}
+```
+
 ### BearClawConfig
 
-The root configuration object. See [Configuration](configuration.md) for usage.
+Resolved agent configuration built from instance + agent config. Used internally by runtimes.
 
 ```typescript
 interface BearClawConfig {
@@ -17,6 +60,9 @@ interface BearClawConfig {
     allowedCommands: string[];
     restrictedCommands: Record<string, string[]>;
     forbiddenPaths: string[];
+    allowedPaths: string[];
+    allowMemoryWrite?: boolean;
+    allowSubshells: boolean;
     rateLimits: {
       global: number;
       perAgent?: number;
@@ -32,6 +78,8 @@ interface BearClawConfig {
     timeout: number;
     requirePairing: boolean;
     allowPublicBind: boolean;
+    approvalMode?: 'auto-approve' | 'auto-deny' | 'wait';
+    apiKeys?: Array<{ label: string; key: string }>;
   };
   providers: {
     anthropic?: { apiKey: string; defaultModel: string };

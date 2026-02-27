@@ -4,13 +4,13 @@ import { CONFIG_DOCS } from '../../config/docs.js';
 
 export const configExplainTool: Tool = {
   name: 'config_explain',
-  description: 'Explain available BearClaw configuration options. Optionally filter by section (e.g. "security", "providers", "policy").',
+  description: 'Explain instance-level BearClaw configuration options. Optionally filter by section (e.g. "security", "providers", "gateway").',
   parameters: {
     type: 'object',
     properties: {
       section: {
         type: 'string',
-        description: 'Optional section prefix to filter by (e.g. "security", "providers", "gateway", "policy", "monitoring", "memory", "channels").',
+        description: 'Optional section prefix to filter by (e.g. "security", "providers", "gateway", "monitoring", "channels").',
       },
     },
   },
@@ -25,7 +25,7 @@ export const configExplainTool: Tool = {
     }
 
     if (docs.length === 0) {
-      return toolResult(`No configuration fields found for section "${section}". Available sections: workspace, security, gateway, providers, channels, memory, policy, monitoring.`);
+      return toolResult(`No configuration fields found for section "${section}". Available sections: security, gateway, providers, channels, monitoring.`);
     }
 
     const lines: string[] = [];

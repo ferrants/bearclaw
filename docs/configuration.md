@@ -1,25 +1,17 @@
 # Configuration
 
-BearClaw uses a single `config.json` file located at `~/.bearclaw/config.json` (or the directory specified by `BEARCLAW_CONFIG_DIR`). All fields are optional — unspecified values use sensible defaults.
+BearClaw uses an **instance config** at `~/.bearclaw/config.jsonc` (or `BEARCLAW_CONFIG_DIR`) for infrastructure/credentials, and a **per-agent config** (`bearclaw.jsonc`) in each agent directory. Unspecified values use sensible defaults.
 
-## Full Config Structure
+## Instance Config Structure
 
 ```json
 {
-  "workspace": {
-    "path": "~/.bearclaw/workspace"
-  },
   "security": {
-    "autonomy": "supervised",
-    "workspaceOnly": true,
-    "allowedCommands": ["git", "npm", "node", "..."],
-    "restrictedCommands": { "curl": ["-o", "--output"] },
-    "allowedPaths": ["/home/user/projects/shared-app"],
     "forbiddenPaths": ["/etc", "/root", "~/.ssh", "..."],
+    "allowedPaths": ["/home/user/projects/shared-app"],
     "rateLimits": {
       "global": 20,
-      "perAgent": 10,
-      "perToolClass": { "exec": 10, "web": 5 }
+      "perAgent": 10
     },
     "encrypt": true
   },
@@ -37,44 +29,6 @@ BearClaw uses a single `config.json` file located at `~/.bearclaw/config.json` (
   "channels": {
     "enabled": ["cli"]
   },
-  "mcp": {
-    "servers": {}
-  },
-  "agents": {
-    "default": {
-      "name": "default",
-      "provider": "anthropic",
-      "maxIterations": 25,
-      "systemPromptFiles": []
-    }
-  },
-  "teams": {},
-  "memory": {
-    "enabled": true,
-    "dir": "memory",
-    "alwaysLoad": ["active-tasks.md"]
-  },
-  "policy": {
-    "defaultAction": "approve",
-    "denyPrecedence": true,
-    "approvalScope": "user+channel",
-    "learningMode": "suggest_rules",
-    "rules": [],
-    "approvals": {
-      "cache": false,
-      "defaultTTLSeconds": 300
-    },
-    "inlineAllow": {
-      "enabled": true,
-      "dayScopeHours": 24
-    },
-    "web": {
-      "mode": "allow_with_blocklist",
-      "blockedDomains": [],
-      "blockedCidrs": [],
-      "blockedHosts": []
-    }
-  },
   "monitoring": {
     "logLevel": "info",
     "heartbeatInterval": 3600
@@ -82,7 +36,36 @@ BearClaw uses a single `config.json` file located at `~/.bearclaw/config.json` (
 }
 ```
 
-## Workspace
+## Agent Config Structure (`bearclaw.jsonc`)
+
+```json
+{
+  "name": "my-agent",
+  "provider": "openai",
+  "workspace": "./workspace",
+  "systemPromptFiles": ["prompts/system.md"],
+  "maxIterations": 25,
+  "subagents": {
+    "ollama_worker": {
+      "name": "ollama_worker",
+      "provider": "ollama",
+      "model": "llama3.2",
+      "maxIterations": 10
+    }
+  },
+  "security": {
+    "autonomy": "supervised",
+    "workspaceOnly": true
+  },
+  "memory": {
+    "enabled": true,
+    "dir": "memory",
+    "alwaysLoad": ["focus.md"]
+  }
+}
+```
+
+## Workspace (agent config)
 
 | Field | Type | Default | Description |
 |---|---|---|---|
@@ -90,7 +73,9 @@ BearClaw uses a single `config.json` file located at `~/.bearclaw/config.json` (
 
 When `security.workspaceOnly` is `true`, agents can only read/write files within this directory and any paths listed in `security.allowedPaths`.
 
-## Security
+## Security (agent config unless noted)
+
+Instance-level security fields: `forbiddenPaths`, `allowedPaths`, `rateLimits.*`, `encrypt`.
 
 | Field | Type | Default | Description |
 |---|---|---|---|
@@ -114,6 +99,8 @@ When `security.workspaceOnly` is `true`, agents can only read/write files within
 - **`full`** — Everything runs without approval
 
 ## Providers
+
+Providers are configured in the instance config (`~/.bearclaw/config.jsonc`).
 
 ### Anthropic
 
@@ -178,7 +165,7 @@ No API key needed — Ollama runs locally.
 | `outputParser` | string | `"text"` | `"text"` or `"jsonl"` |
 | `jsonlMessageType` | string | `"agent_message"` | For jsonl: which type to extract |
 
-## Agents
+## Agents (agent config)
 
 ```json
 {
@@ -210,7 +197,7 @@ No API key needed — Ollama runs locally.
 
 The `"default"` agent is used by the CLI entry point. The daemon routes to agents by name.
 
-## Teams
+## Teams (agent config)
 
 ```json
 {
@@ -232,7 +219,7 @@ The `"default"` agent is used by the CLI entry point. The daemon routes to agent
 
 See [Multi-Agent](multi-agent.md) for routing and orchestration details.
 
-## Channels
+## Channels (instance config)
 
 ```json
 {
@@ -248,7 +235,7 @@ See [Multi-Agent](multi-agent.md) for routing and orchestration details.
 
 See [Channels](channels.md) for details.
 
-## Gateway
+## Gateway (instance config)
 
 ```jsonc
 {
@@ -269,11 +256,86 @@ The `apiKeys` array lets you pre-provision bearer tokens for automated clients a
 
 See [Gateway](gateway.md) for authentication methods and endpoints.
 
-## Policy
+## Policy (agent config)
 
-See [Security](security.md) for the full policy rule system.
+Policy controls how BearClaw evaluates tool calls — whether to allow, deny, or require approval. Configured in `bearclaw.jsonc`.
 
-## Memory
+```jsonc
+{
+  "policy": {
+    "defaultAction": "approve",
+    "denyPrecedence": true,
+    "approvalScope": "user+channel",
+    "learningMode": "suggest_rules",
+    "rules": [],
+    "approvals": {
+      "cache": false,
+      "defaultTTLSeconds": 300
+    },
+    "inlineAllow": {
+      "enabled": true,
+      "dayScopeHours": 24
+    },
+    "web": {
+      "mode": "allow_with_blocklist",
+      "blockedDomains": [],
+      "blockedCidrs": [],
+      "blockedHosts": []
+    }
+  }
+}
+```
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `defaultAction` | string | `"approve"` | Default action when no rule matches: `"allow"`, `"deny"`, or `"approve"` (require approval) |
+| `denyPrecedence` | boolean | `true` | When true, deny rules take precedence over allow rules |
+| `approvalScope` | string | `"user+channel"` | Scope for approval caching: `"global"`, `"user"`, `"user+channel"` |
+| `learningMode` | string | `"suggest_rules"` | `"suggest_rules"` logs suggested allow/deny rules based on approval decisions |
+| `rules` | array | `[]` | Explicit allow/deny rules (see below) |
+
+### Approvals
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `approvals.cache` | boolean | `false` | Cache approval decisions for the TTL duration |
+| `approvals.defaultTTLSeconds` | number | `300` | How long cached approvals last (seconds) |
+
+### Inline Allows
+
+Inline allows let users grant temporary tool permissions directly in chat messages (e.g., `!allow exec`).
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `inlineAllow.enabled` | boolean | `true` | Enable inline allow directives |
+| `inlineAllow.dayScopeHours` | number | `24` | How long `day` scoped inline allows last (hours) |
+
+### Web Filtering
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `web.mode` | string | `"allow_with_blocklist"` | Web access mode |
+| `web.blockedDomains` | string[] | `[]` | Domains to block for web_fetch/web_search |
+| `web.blockedCidrs` | string[] | `[]` | CIDR ranges to block (SSRF protection) |
+| `web.blockedHosts` | string[] | `[]` | Hostnames to block |
+
+### Policy Rules
+
+Rules are evaluated in order. Each rule matches against tool name, scope, command, and agent, then applies an action.
+
+```jsonc
+{
+  "rules": [
+    { "action": "allow", "toolName": "read_file" },
+    { "action": "deny", "toolName": "exec", "command": "rm *" },
+    { "action": "approve", "scope": "web" }
+  ]
+}
+```
+
+See [Security](security.md) for the full policy rule system and evaluation details.
+
+## Memory (agent config)
 
 ```json
 {
@@ -296,7 +358,7 @@ Typical memory structure:
   YYYY-MM-DD.md         # Daily logs
 ```
 
-## Skills
+## Skills (agent config)
 
 Skills are discovered from the filesystem. By default, BearClaw looks for skill directories in `{workspace}/skills/` and `~/.bearclaw/skills/`:
 
@@ -330,9 +392,9 @@ In a `bearclaw.jsonc` agent config, use `skillsDirs` to load skills from additio
 
 See [Skills](skills.md) for the full format and precedence rules. BearClaw skills are compatible with Claude Code Agent Skills — the same `SKILL.md` works in both.
 
-## MCP Servers
+## MCP Servers (agent config)
 
-MCP (Model Context Protocol) servers are configured in `config.json`. Each server is spawned over stdio at startup and its tools are discovered and registered automatically.
+MCP (Model Context Protocol) servers are configured in `bearclaw.jsonc`. Each server is spawned over stdio at startup and its tools are discovered and registered automatically.
 
 ```json
 {
@@ -368,7 +430,7 @@ Tools discovered from each server are registered with a `{serverName}_{toolName}
 
 Servers are started at startup and stopped during graceful shutdown.
 
-## Schedules
+## Schedules (agent config)
 
 Schedules allow agents to run on a timer without manual invocation. Each schedule can be configured with execution controls for autonomous operation.
 
@@ -406,7 +468,7 @@ Schedules allow agents to run on a timer without manual invocation. Each schedul
 
 The first example creates a tight sandbox: fresh thread every 6 hours, auto-allows 5 specific tools, denies anything else. The second reuses its conversation, allows read + exec, and auto-approves everything else.
 
-## Monitoring
+## Monitoring (instance config)
 
 | Field | Type | Default | Description |
 |---|---|---|---|

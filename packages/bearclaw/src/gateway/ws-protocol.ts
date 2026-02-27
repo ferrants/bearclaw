@@ -226,6 +226,17 @@ export interface ServerMessage_Usage {
   model: string;
 }
 
+export interface ServerMessage_Notice {
+  type: 'notice';
+  level: 'info' | 'warn';
+  code: string;
+  message: string;
+  agentId?: string;
+  chatId?: string;
+  droppedToolMessages?: number;
+  droppedToolCalls?: number;
+}
+
 export interface ServerMessage_Stats {
   type: 'stats';
   id: string;
@@ -266,6 +277,7 @@ export type ServerMessage =
   | ServerMessage_UserRuleRemoved
   | ServerMessage_AgentStatus
   | ServerMessage_Usage
+  | ServerMessage_Notice
   | ServerMessage_Stats
   | ServerMessage_Error;
 

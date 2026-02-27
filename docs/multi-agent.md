@@ -28,7 +28,7 @@ Messages without a prefix go to the `default` agent.
 
 ## Teams
 
-Teams are configured in `config.json`:
+Teams are configured in `bearclaw.jsonc`:
 
 ```json
 {

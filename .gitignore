@@ -8,3 +8,6 @@ paired-tokens.json
 coverage/
 packages/bearclaw-tui/debug.log
 .claude/
+publish.sh
+run_server.sh
+run_tui.sh

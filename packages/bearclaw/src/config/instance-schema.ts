@@ -1,4 +1,3 @@
-import type { McpServerConfig, PolicyConfig, AutonomyLevel } from './schema.js';
 
 /**
  * Instance-level configuration (~/.bearclaw/config.jsonc).
@@ -54,21 +53,4 @@ export interface InstanceConfig {
     logLevel: 'debug' | 'info' | 'warn' | 'error';
     heartbeatInterval: number;
   };
-
-  // Legacy fields — when present, treated as _default agent config
-  workspace?: { path: string };
-  agents?: Record<string, import('./schema.js').AgentConfig>;
-  teams?: Record<string, import('./schema.js').TeamConfig>;
-  memory?: { enabled: boolean; dir: string; alwaysLoad: string[] };
-  policy?: PolicyConfig;
-  schedules?: import('./schema.js').ScheduleRule[];
-  mcp?: { servers: Record<string, McpServerConfig> };
 }
-
-/**
- * Fields that indicate legacy config with embedded agent definitions.
- * When any of these exist in instance config, we synthesize a _default agent.
- */
-export const LEGACY_AGENT_FIELDS = [
-  'agents', 'teams', 'memory', 'policy', 'schedules', 'mcp', 'workspace',
-] as const;

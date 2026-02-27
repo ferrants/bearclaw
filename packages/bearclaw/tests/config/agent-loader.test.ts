@@ -8,7 +8,6 @@ import {
   mergeSecurityConfig,
   mergePolicyConfig,
   buildResolvedConfig,
-  hasLegacyAgentFields,
 } from '../../src/config/agent-loader.js';
 import { AutonomyLevel } from '../../src/config/schema.js';
 import type { InstanceConfig } from '../../src/config/instance-schema.js';
@@ -252,16 +251,6 @@ describe('mergePolicyConfig', () => {
   });
 });
 
-describe('hasLegacyAgentFields', () => {
-  it('returns true when legacy fields present', () => {
-    expect(hasLegacyAgentFields({ agents: {}, providers: {} })).toBe(true);
-    expect(hasLegacyAgentFields({ workspace: { path: '.' } })).toBe(true);
-  });
-
-  it('returns false for pure instance config', () => {
-    expect(hasLegacyAgentFields({ providers: {}, gateway: {} })).toBe(false);
-  });
-});
 
 describe('buildResolvedConfig', () => {
   let dir: string;

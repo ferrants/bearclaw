@@ -131,7 +131,9 @@ describe('SecurityPolicy', () => {
 
     it('handles chained commands (all must be allowed)', () => {
       const policy = makePolicy();
-      expect(policy.isCommandAllowed('git add . && git commit -m "test"')).toBe(true);
+      // git commit is in RESTRICTED_COMMANDS, so it's blocked
+      expect(policy.isCommandAllowed('git add . && git commit -m "test"')).toBe(false);
+      expect(policy.isCommandAllowed('git add . && git status')).toBe(true);
       expect(policy.isCommandAllowed('git status && rm -rf /')).toBe(false);
     });
 
@@ -186,12 +188,12 @@ describe('SecurityPolicy', () => {
       });
 
       it('allows output redirection', () => {
-        const policy = makePolicy({ allowSubshells: true });
+        const policy = makePolicy({ allowSubshells: true, workspaceOnly: false });
         expect(policy.isCommandAllowed('ls > /tmp/out')).toBe(true);
       });
 
       it('allows process substitution', () => {
-        const policy = makePolicy({ allowSubshells: true });
+        const policy = makePolicy({ allowSubshells: true, workspaceOnly: false });
         expect(policy.isCommandAllowed('diff <(ls /a) <(ls /b)')).toBe(true);
       });
 
@@ -202,7 +204,7 @@ describe('SecurityPolicy', () => {
       });
 
       it('allows real-world AWS command with subshell', () => {
-        const policy = makePolicy({ allowSubshells: true, allowedCommands: [...ALLOWED_COMMANDS, 'aws'] });
+        const policy = makePolicy({ allowSubshells: true, workspaceOnly: false, allowedCommands: [...ALLOWED_COMMANDS, 'aws'] });
         expect(policy.isCommandAllowed('aws logs filter-log-events --log-group-name "/aws/lambda/MyFunc" --start-time $(date -d \'1 hour ago\' +%s000) --region us-west-2')).toBe(true);
       });
 

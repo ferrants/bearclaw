@@ -159,4 +159,4 @@ Invalid skills are logged as warnings and skipped — they don't prevent other s
 
 ## MCP Servers
 
-MCP servers are configured separately in `config.json`, not in skills. See [Configuration](configuration.md#mcp-servers) for details.
+MCP servers are configured separately in `bearclaw.jsonc`, not in skills. See [Configuration](configuration.md#mcp-servers) for details.

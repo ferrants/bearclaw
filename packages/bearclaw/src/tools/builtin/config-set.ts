@@ -32,13 +32,13 @@ export function createConfigSetTool(
 ): Tool {
   return {
     name: 'config_set',
-    description: 'Update a BearClaw configuration field. Requires a dotted path and a new value. Security-sensitive fields always require user approval.',
+    description: 'Update an instance configuration field. Requires a dotted path and a new value. Security-sensitive fields always require user approval.',
     parameters: {
       type: 'object',
       properties: {
         path: {
           type: 'string',
-          description: 'Dotted path to the config field (e.g. "security.autonomy", "monitoring.logLevel").',
+          description: 'Dotted path to the config field (e.g. "providers.openai.defaultModel", "monitoring.logLevel").',
         },
         value: {
           description: 'The new value to set. Strings are coerced to the expected type when possible.',

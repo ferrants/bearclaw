@@ -447,6 +447,19 @@ export class WsHandler {
       });
     });
 
+    this.eventBus.on('notice', (data) => {
+      this.broadcast({
+        type: 'notice',
+        level: data.level,
+        code: data.code,
+        message: data.message,
+        agentId: data.agentId,
+        chatId: data.chatId,
+        droppedToolMessages: data.droppedToolMessages,
+        droppedToolCalls: data.droppedToolCalls,
+      });
+    });
+
     this.eventBus.on('agent:error', (data) => {
       this.broadcast({
         type: 'error',
