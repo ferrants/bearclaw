@@ -1,0 +1,73 @@
+packages/bearclaw-tui/src/components/StatusBar.tsx
+  1c0168ad87a8ca65 23
+README.md
+  fa16da86663b8810 88,96,104,112
+packages/bearclaw/tests/config/manager.test.ts
+  fa16da86663b8810 6,17,26,46
+packages/bearclaw/tests/security/policy.test.ts
+  fa16da86663b8810 134-136,191,196,207
+packages/bearclaw/tests/agent/loop.test.ts
+  fa16da86663b8810 259,261
+.gitignore
+  fa16da86663b8810 11-13
+packages/bearclaw/src/agent/loop.ts
+  fa16da86663b8810 60
+packages/bearclaw/tests/tools/config-tools.test.ts
+  fa16da86663b8810 6,23,30,44,48,50,54,64,76,92,105,110,113,117,122,126,130,140,144-145,149
+docs/configuration.md
+  fa16da86663b8810 261-334,336
+packages/bearclaw-tui/src/components/ChatInput.tsx
+  1c0168ad87a8ca65 76,80-83,86
+packages/bearclaw/src/daemon.ts
+  fa16da86663b8810 232,826
+packages/bearclaw-tui/src/index.tsx
+  1c0168ad87a8ca65 8-12
+packages/bearclaw/src/events.ts
+  fa16da86663b8810 19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.5",
+  "base_commit_sha": "5efb538e52d7e2a6753ada092486c7bc45da407f",
+  "prompts": {
+    "1c0168ad87a8ca65": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "44f601f8-ed01-4192-abca-816ca81933c1",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Matt Ferrante <matt@heyferrante.com>",
+      "messages": [],
+      "total_additions": 12,
+      "total_deletions": 2,
+      "accepted_lines": 12,
+      "overriden_lines": 0
+    },
+    "a9659d9ed6556ad1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019c9802-ebe4-7a93-9670-0c12c92be84e",
+        "model": "gpt-5.2-codex"
+      },
+      "human_author": "Matt Ferrante <matt@heyferrante.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 15,
+      "overriden_lines": 0
+    },
+    "fa16da86663b8810": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "caed5b34-50bd-43e5-b590-74a21a28ee4f",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Matt Ferrante <matt@heyferrante.com>",
+      "messages": [],
+      "total_additions": 121,
+      "total_deletions": 51,
+      "accepted_lines": 120,
+      "overriden_lines": 0
+    }
+  }
+}
