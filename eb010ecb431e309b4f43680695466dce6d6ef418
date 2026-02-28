@@ -1,0 +1,46 @@
+docs/configuration.md
+  88c2153f678bb3d5 397,399-401,405-410,433-448,450
+packages/bearclaw/plans/ARCHITECTURE-v2.md
+  88c2153f678bb3d5 44,46,48-49,51-53,55-64,70
+docs/architecture.md
+  88c2153f678bb3d5 27,96-97,222
+docs/tools.md
+  88c2153f678bb3d5 146
+docs/api-reference.md
+  88c2153f678bb3d5 376-381,383-395
+packages/bearclaw/plans/ARCHITECTURE-REVIEW.md
+  88c2153f678bb3d5 294,297-299,303-306,308-335
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.6",
+  "base_commit_sha": "eb010ecb431e309b4f43680695466dce6d6ef418",
+  "prompts": {
+    "88c2153f678bb3d5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b054879f-7b8f-4f1c-a13a-39b1c7d58164",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Matt Ferrante <matt@heyferrante.com>",
+      "messages": [],
+      "total_additions": 108,
+      "total_deletions": 39,
+      "accepted_lines": 107,
+      "overriden_lines": 0
+    },
+    "a9659d9ed6556ad1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019c9802-ebe4-7a93-9670-0c12c92be84e",
+        "model": "gpt-5.2-codex"
+      },
+      "human_author": "Matt Ferrante <matt@heyferrante.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 15,
+      "overriden_lines": 0
+    }
+  }
+}
