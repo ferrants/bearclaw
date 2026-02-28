@@ -8,7 +8,8 @@ import { ScopedRateLimiter } from '../security/rate-limiter.js';
 import { PolicyEngine } from '../security/policy-engine.js';
 import { InlineAllowStore } from '../security/inline-allow.js';
 import { loadSkillsMulti } from '../skills/index.js';
-import { McpClient, createMcpTools } from '../mcp/index.js';
+import { McpClient, McpHttpClient, createMcpTools } from '../mcp/index.js';
+import type { McpTransport } from '../mcp/index.js';
 import type { ToolRegistryImpl } from '../tools/registry.js';
 import { createLogger } from '../logging.js';
 
@@ -25,10 +26,10 @@ export interface CreateAgentRuntimeOptions {
   toolRegistry?: ToolRegistryImpl;
 }
 
-function expandMcpEnv(env?: Record<string, string>): Record<string, string> | undefined {
-  if (!env) return undefined;
+function expandEnvVars(values?: Record<string, string>): Record<string, string> | undefined {
+  if (!values) return undefined;
   const result: Record<string, string> = {};
-  for (const [k, v] of Object.entries(env)) {
+  for (const [k, v] of Object.entries(values)) {
     result[k] = v.replace(/\$\{(\w+)\}/g, (_match, varName) => process.env[varName] ?? '');
   }
   return result;
@@ -75,11 +76,20 @@ export async function createAgentRuntime(opts: CreateAgentRuntimeOptions): Promi
   const skills = loadSkillsMulti(explicitSkillsDirs, [agentDir.workspacePath, agentDir.dir, configDir]);
 
   // Start MCP servers (agent-specific + instance)
-  const mcpClients: McpClient[] = [];
+  const mcpClients: McpTransport[] = [];
   const agentMcpServers = agentDir.config.mcp?.servers ?? {};
   for (const [name, serverConfig] of Object.entries(agentMcpServers)) {
-    const env = expandMcpEnv(serverConfig.env);
-    const client = new McpClient(serverConfig.command, serverConfig.args ?? [], env);
+    let client: McpTransport;
+    if (serverConfig.url) {
+      const headers = expandEnvVars(serverConfig.headers) ?? {};
+      client = new McpHttpClient(serverConfig.url, headers, serverConfig.timeout);
+    } else if (serverConfig.command) {
+      const env = expandEnvVars(serverConfig.env);
+      client = new McpClient(serverConfig.command, serverConfig.args ?? [], env);
+    } else {
+      log.warn('MCP server config missing both url and command, skipping', { name });
+      continue;
+    }
     await client.start();
     mcpClients.push(client);
     if (toolRegistry) {

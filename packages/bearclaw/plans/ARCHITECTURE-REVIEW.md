@@ -291,28 +291,48 @@ All must be resolved before Phase 1 is considered complete.
 
 ---
 
-### Phase 3b (NEW): MCP Client — Custom Lightweight
+### Phase 3b: MCP Client — Custom Lightweight ✅ IMPLEMENTED
 
 **#33 — MCP Support**
-- New directory: `src/mcp/`
-- No SDK dependency — implement MCP JSON-RPC directly over stdio + SSE
+- Directory: `src/mcp/`
+- No SDK dependency — implements MCP JSON-RPC 2.0 directly over stdio + HTTP Streamable
+- Both transports implement the `McpTransport` interface
 
 | File | Purpose |
 |---|---|
-| `src/mcp/types.ts` | MCP JSON-RPC message types, `McpToolEntry`, transport interface |
-| `src/mcp/transport-stdio.ts` | Spawn MCP server as subprocess, newline-delimited JSON-RPC over stdin/stdout |
-| `src/mcp/transport-sse.ts` | SSE-based MCP servers via `fetch` + event stream parsing |
-| `src/mcp/client.ts` | `McpClient`: initialize handshake, `tools/list`, `tools/call` over transport |
-| `src/mcp/manager.ts` | `McpClientManager`: connect to all configured servers, lifecycle |
-| `src/mcp/tool-adapter.ts` | `adaptMcpTool()` wraps MCP tool as BearClaw `Tool`; `registerMcpTools()` bulk-registers into `ToolRegistry` |
-| `src/mcp/server.ts` | (Phase 8) Optional: expose BearClaw tools as MCP server |
+| `src/mcp/client.ts` | `McpTransport` interface + `McpClient` (stdio transport): spawns subprocess, newline-delimited JSON-RPC over stdin/stdout |
+| `src/mcp/http-client.ts` | `McpHttpClient` (HTTP Streamable transport): POST JSON-RPC to URL, handles JSON + SSE responses, `Mcp-Session-Id` tracking, 404 session-expiry auto-retry |
+| `src/mcp/tool.ts` | `createMcpTools()` wraps MCP tools as BearClaw `Tool` instances; registers into `ToolRegistry` |
+| `src/mcp/index.ts` | Re-exports `McpClient`, `McpHttpClient`, `McpTransport`, `createMcpTools` |
 
-Config additions:
-- `mcp.servers: Record<string, { name, transport, command?, args?, env?, url?, headers?, toolPrefix?, allowTools?, blockTools?, enabled? }>`
-- `mcp.toolTimeout: number` (default 30000)
-- `mcp.serveEnabled: boolean` (default false)
+Config (`McpServerConfig`):
+- `command?: string` — command to spawn (stdio transport)
+- `args?: string[]` — arguments for the command
+- `env?: Record<string, string>` — environment variables (supports `${VAR}` expansion)
+- `url?: string` — endpoint URL (HTTP Streamable transport)
+- `headers?: Record<string, string>` — custom headers, e.g. `Authorization` (supports `${VAR}` expansion)
+- `timeout?: number` — request timeout in ms (default 30000)
 
-Flow: startup → `McpClientManager.connectAll()` → spawns/connects all servers → `initialize` + `tools/list` JSON-RPC → `adaptMcpTool()` wraps each → registers into `ToolRegistry`. Tool calls send `tools/call`. Policy hooks enforce same rules as builtins.
+A config must have either `command` (stdio) or `url` (HTTP). Transport selection is automatic in `agent-runtime-factory.ts`.
+
+```jsonc
+{
+  "mcp": {
+    "servers": {
+      "stripe": {
+        "url": "https://mcp.stripe.com",
+        "headers": { "Authorization": "Bearer ${STRIPE_API_KEY}" }
+      },
+      "chrome-devtools": {
+        "command": "npx",
+        "args": ["chrome-devtools-mcp@latest", "--autoConnect"]
+      }
+    }
+  }
+}
+```
+
+Flow: startup → `createAgentRuntime()` iterates `mcp.servers` → creates `McpHttpClient` or `McpClient` per config → `start()` sends `initialize` + `notifications/initialized` → `createMcpTools()` calls `tools/list` → wraps each as BearClaw `Tool` → registers into `ToolRegistry`. Tool calls send `tools/call`. Policy hooks enforce same rules as builtins.
 
 ---
 

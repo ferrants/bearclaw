@@ -33,7 +33,7 @@ import { runAgentLoop } from './agent/loop.js';
 import { buildSystemPrompt } from './agent/context.js';
 import { loadSession, saveSession, clearSession } from './agent/session.js';
 import { normalizeMessages } from './agent/normalize-messages.js';
-import { type McpClient, createMcpTools } from './mcp/index.js';
+import { type McpTransport, createMcpTools } from './mcp/index.js';
 import type { SkillDef } from './skills/types.js';
 import type { ToolContext } from './tools/types.js';
 import { parseSlashCommand } from './commands/slash.js';
@@ -275,7 +275,7 @@ async function main() {
   const skills = agentRuntime.skills;
 
   // MCP clients (agent-level only) — register tools into shared registry
-  const mcpClients: McpClient[] = [...agentRuntime.mcpClients];
+  const mcpClients: McpTransport[] = [...agentRuntime.mcpClients];
   {
     const agentMcpServers = agentRuntime.agentDir?.config.mcp?.servers ?? {};
     let clientIdx = 0;
@@ -406,7 +406,7 @@ async function runHeadless(
   agentConfig: { maxIterations?: number; maxTotalTokens?: number },
   makeCtx: () => ToolContext,
   skills: SkillDef[],
-  mcpClients: McpClient[],
+  mcpClients: McpTransport[],
 ): Promise<void> {
   const chatId = sessionId ?? `headless-${Date.now()}`;
   const normalizedHeadless = sessionId
@@ -463,7 +463,7 @@ async function runRepl(
   agentConfig: { name: string; maxIterations?: number; maxTotalTokens?: number; provider: string },
   makeCtx: () => ToolContext,
   skills: SkillDef[],
-  mcpClients: McpClient[],
+  mcpClients: McpTransport[],
   inlineAllowStore: InlineAllowStore,
   workspacePath: string,
   agentRuntimeInfo?: AgentRuntime,

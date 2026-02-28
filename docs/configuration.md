@@ -394,12 +394,20 @@ See [Skills](skills.md) for the full format and precedence rules. BearClaw skill
 
 ## MCP Servers (agent config)
 
-MCP (Model Context Protocol) servers are configured in `bearclaw.jsonc`. Each server is spawned over stdio at startup and its tools are discovered and registered automatically.
+MCP (Model Context Protocol) servers are configured in `bearclaw.jsonc`. BearClaw supports two transports — **stdio** (spawn a local process) and **HTTP Streamable** (connect to a remote URL). Each server's tools are discovered via `tools/list` and registered automatically at startup.
 
-```json
+A server config must have either `command` (stdio) or `url` (HTTP). Transport selection is automatic.
+
+```jsonc
 {
   "mcp": {
     "servers": {
+      // HTTP Streamable transport — remote API-based servers
+      "stripe": {
+        "url": "https://mcp.stripe.com",
+        "headers": { "Authorization": "Bearer ${STRIPE_API_KEY}" }
+      },
+      // Stdio transport — local subprocess servers
       "jira": {
         "command": "npx",
         "args": ["-y", "@modelcontextprotocol/server-jira"],
@@ -422,11 +430,24 @@ MCP (Model Context Protocol) servers are configured in `bearclaw.jsonc`. Each se
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `command` | string | yes | Command to spawn the MCP server |
-| `args` | string[] | no | Arguments for the command |
-| `env` | object | no | Environment variables (supports `${VAR}` expansion from process env) |
+| `command` | string | one of `command` or `url` | Command to spawn the MCP server (stdio transport) |
+| `args` | string[] | no | Arguments for the command (stdio only) |
+| `env` | object | no | Environment variables for the subprocess (supports `${VAR}` expansion; stdio only) |
+| `url` | string | one of `command` or `url` | Endpoint URL for the MCP server (HTTP Streamable transport) |
+| `headers` | object | no | Custom HTTP headers, e.g. `Authorization` (supports `${VAR}` expansion; HTTP only) |
+| `timeout` | number | no | Request timeout in milliseconds (default: 30000; HTTP only) |
 
-Tools discovered from each server are registered with a `{serverName}_{toolName}` prefix (e.g., `jira_create_issue`, `github_list_repos`). They go through the same security pipeline as built-in tools.
+### Stdio transport
+
+Spawns the MCP server as a child process and communicates via newline-delimited JSON-RPC 2.0 over stdin/stdout. Use this for locally-installed MCP servers (npm packages, binaries, etc.).
+
+### HTTP Streamable transport
+
+Sends JSON-RPC 2.0 requests via POST to the configured URL. Supports both `application/json` and `text/event-stream` (SSE) responses. Tracks `Mcp-Session-Id` headers automatically and re-initializes on 404 (session expiry). Use this for remote/cloud MCP servers like Stripe, or any server that requires API key authentication via headers.
+
+### Common behavior
+
+Tools discovered from each server are registered with a `{serverName}_{toolName}` prefix (e.g., `stripe_create_payment_link`, `jira_create_issue`). They go through the same security pipeline as built-in tools.
 
 Servers are started at startup and stopped during graceful shutdown.
 

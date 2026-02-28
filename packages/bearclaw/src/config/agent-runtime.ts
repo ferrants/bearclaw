@@ -4,7 +4,7 @@ import type { InlineAllowStore } from '../security/inline-allow.js';
 import type { ToolRegistry } from '../tools/types.js';
 import type { ToolHookRegistry } from '../tools/types.js';
 import type { SkillDef } from '../skills/types.js';
-import type { McpClient } from '../mcp/index.js';
+import type { McpTransport } from '../mcp/index.js';
 import type { AgentConfig, TeamConfig, BearClawConfig } from './schema.js';
 import type { ResolvedAgentDir } from './agent-schema.js';
 
@@ -32,7 +32,7 @@ export interface AgentRuntime {
   /** Skills loaded for this agent (agent dir + instance). */
   skills: SkillDef[];
   /** MCP clients started for this agent. */
-  mcpClients: McpClient[];
+  mcpClients: McpTransport[];
 
   /** Agent configs visible to this runtime (primary + subagents). */
   agentConfigs: Record<string, AgentConfig>;

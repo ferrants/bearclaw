@@ -143,7 +143,7 @@ Used for cross-channel communication. The PolicyEngine controls access via the `
 
 ## MCP Tools
 
-BearClaw can connect to MCP (Model Context Protocol) servers configured in `bearclaw.jsonc`. Tools discovered from each server are registered with a `{serverName}_{toolName}` prefix and go through the same security pipeline (hooks, policy, rate limiting) as built-in tools.
+BearClaw can connect to MCP (Model Context Protocol) servers configured in `bearclaw.jsonc`, via either **stdio** (local subprocess) or **HTTP Streamable** (remote URL) transport. Tools discovered from each server are registered with a `{serverName}_{toolName}` prefix and go through the same security pipeline (hooks, policy, rate limiting) as built-in tools.
 
 See [Configuration](configuration.md#mcp-servers) for setup.
 

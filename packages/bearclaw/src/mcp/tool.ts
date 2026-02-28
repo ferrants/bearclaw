@@ -1,9 +1,9 @@
 import type { Tool } from '../tools/types.js';
 import { toolResult, errorResult } from '../tools/types.js';
 import type { ToolContext } from '../tools/types.js';
-import type { McpClient } from './client.js';
+import type { McpTransport } from './client.js';
 
-export async function createMcpTools(prefix: string, client: McpClient): Promise<Tool[]> {
+export async function createMcpTools(prefix: string, client: McpTransport): Promise<Tool[]> {
   const mcpTools = await client.listTools();
   const tools: Tool[] = [];
 

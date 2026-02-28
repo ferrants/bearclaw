@@ -373,10 +373,26 @@ interface SkillDef {
 
 ```typescript
 interface McpServerConfig {
-  command: string;           // Command to spawn MCP server
-  args?: string[];
-  env?: Record<string, string>;  // Supports ${VAR} expansion
+  command?: string;          // Command to spawn MCP server (stdio transport)
+  args?: string[];           // Arguments for the command (stdio only)
+  env?: Record<string, string>;  // Environment variables, supports ${VAR} expansion (stdio only)
+  url?: string;              // Endpoint URL (HTTP Streamable transport)
+  headers?: Record<string, string>;  // Custom HTTP headers, supports ${VAR} expansion (HTTP only)
+  timeout?: number;          // Request timeout in ms, default 30000 (HTTP only)
 }
+// A config must have either `command` (stdio) or `url` (HTTP).
+```
+
+### McpTransport
+
+```typescript
+interface McpTransport {
+  start(): Promise<void>;
+  listTools(): Promise<McpToolDef[]>;
+  callTool(name: string, args: Record<string, unknown>): Promise<string>;
+  stop(): Promise<void>;
+}
+// Implemented by McpClient (stdio) and McpHttpClient (HTTP Streamable).
 ```
 
 ### McpToolDef

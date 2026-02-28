@@ -10,7 +10,14 @@ export interface McpToolDef {
   inputSchema: Record<string, unknown>;
 }
 
-export class McpClient {
+export interface McpTransport {
+  start(): Promise<void>;
+  listTools(): Promise<McpToolDef[]>;
+  callTool(name: string, args: Record<string, unknown>): Promise<string>;
+  stop(): Promise<void>;
+}
+
+export class McpClient implements McpTransport {
   private process: ChildProcess | null = null;
   private buffer = '';
   private nextId = 1;

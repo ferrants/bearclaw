@@ -24,7 +24,7 @@ Skills live in `{workspace}/skills/{name}/SKILL.md` with YAML frontmatter and ma
 
 ### MCP Client
 
-BearClaw includes a built-in MCP client that communicates over stdio using JSON-RPC 2.0. MCP servers are configured in `bearclaw.jsonc` and spawned at startup, with tools discovered via `tools/list` and registered automatically. Additionally, CLI Delegation remains available for tools that need full MCP support via external processes.
+BearClaw includes a built-in MCP client with two transports — **stdio** (`McpClient`) for local subprocess servers and **HTTP Streamable** (`McpHttpClient`) for remote URL-based servers. Both implement the `McpTransport` interface and communicate via JSON-RPC 2.0. MCP servers are configured in `bearclaw.jsonc` and connected at startup, with tools discovered via `tools/list` and registered automatically. Transport selection is automatic based on whether the config has a `command` (stdio) or `url` (HTTP) field.
 
 ### Sessions = JSON Files
 
@@ -93,7 +93,8 @@ bearclaw/
       index.ts                        # Barrel exports
 
     mcp/
-      client.ts                       # JSON-RPC 2.0 over stdio
+      client.ts                       # McpTransport interface + McpClient (stdio transport)
+      http-client.ts                  # McpHttpClient (HTTP Streamable transport)
       tool.ts                         # MCP tools → Tool[]
       index.ts                        # Barrel exports
 
@@ -218,7 +219,7 @@ BearClaw cherry-picks patterns from five projects:
 
 ## Post-MVP Roadmap
 
-1. ~~Custom MCP client~~ — ✅ Built-in MCP client with JSON-RPC 2.0 over stdio
+1. ~~Custom MCP client~~ — ✅ Built-in MCP client with JSON-RPC 2.0 over stdio + HTTP Streamable
 2. ~~Skills system~~ — ✅ SKILL.md files with script tools and MCP servers
 3. Plugin system — tools + hooks + channels from npm packages
 4. Cron scheduler + heartbeat — recurring tasks in fresh sessions

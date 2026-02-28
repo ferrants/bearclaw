@@ -41,22 +41,33 @@ Following the OpenClaw pattern, memory lives in the workspace as plain markdown:
 
 Agents read/write these with `read_file`/`write_file` tools. No FTS5, no vectors, no embedding cache. The agent's intelligence IS the search. This eliminates `better-sqlite3`, the `src/memory/` directory, and ~500 lines of hybrid search code.
 
-### 2. MCP via Spawn + CLI Delegation (not custom MCP client)
+### 2. Custom MCP Client (stdio + HTTP Streamable)
 
-Instead of building an MCP client (~6 files, JSON-RPC, transport management), agents delegate to tools that have MCP built in. An agent spawns a subagent configured with the `cli-delegation` provider, which calls `claude -p "..."` or any other CLI tool.
+BearClaw has a custom MCP client with zero SDK dependencies — just JSON-RPC 2.0 over two transports:
 
-This is **provider-agnostic**. The spawn tool creates a subagent with whatever provider is configured. Adding future coding tools means adding a config entry, not code:
+- **Stdio transport** (`McpClient`): spawns MCP server as subprocess, newline-delimited JSON-RPC over stdin/stdout
+- **HTTP Streamable transport** (`McpHttpClient`): POST JSON-RPC to a URL endpoint, supports both `application/json` and `text/event-stream` responses, `Mcp-Session-Id` tracking, and auto-retry on 404 session expiry
 
-```json
+Both implement the `McpTransport` interface (`start`, `listTools`, `callTool`, `stop`). Transport selection is automatic based on config — `url` field → HTTP, `command` field → stdio.
+
+```jsonc
 {
-  "providers": {
-    "cliDelegation": {
-      "command": "claude",
-      "flags": ["--allowedTools", "mcp__*"]
+  "mcp": {
+    "servers": {
+      "stripe": {
+        "url": "https://mcp.stripe.com",
+        "headers": { "Authorization": "Bearer ${STRIPE_API_KEY}" }
+      },
+      "local-server": {
+        "command": "npx",
+        "args": ["some-mcp-server@latest"]
+      }
     }
   }
 }
 ```
+
+CLI delegation (`providers.cliDelegation`) still exists as an alternative for tools that have MCP built in (e.g., `claude -p "..."`), but direct MCP integration is preferred.
 
 ### 3. Sessions = JSON Files (not SQLite)
 

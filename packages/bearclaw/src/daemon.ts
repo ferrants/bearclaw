@@ -34,7 +34,7 @@ import { buildSystemPrompt } from './agent/context.js';
 import { loadSession, saveSession, clearSession, listChats } from './agent/session.js';
 import { normalizeMessages } from './agent/normalize-messages.js';
 import type { SessionProvider } from './gateway/ws-handler.js';
-import { type McpClient, createMcpTools } from './mcp/index.js';
+import { type McpTransport, createMcpTools } from './mcp/index.js';
 import { MessageBus } from './bus/bus.js';
 import { CliChannel } from './channels/cli.js';
 import type { Channel } from './channels/types.js';
@@ -209,7 +209,7 @@ async function main() {
   const skills = defaultRuntime.skills;
 
   // 6c. Collect all MCP clients and register their tools into the shared registry
-  const mcpClients: McpClient[] = [];
+  const mcpClients: McpTransport[] = [];
   for (const runtime of agentRegistry.all()) {
     mcpClients.push(...runtime.mcpClients);
     // Register MCP tools (runtime was created before toolRegistry existed)
