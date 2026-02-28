@@ -38,10 +38,12 @@ export class SecurityPolicy {
     if (normalized.startsWith('..')) return false;
 
     if (this.workspaceOnly && path.isAbsolute(expanded)) {
+      const normalizedWorkspace = path.normalize(this.workspaceDir);
+      const underWorkspace = normalized === normalizedWorkspace || normalized.startsWith(normalizedWorkspace + path.sep);
       const underAllowed = this.allowedPaths.some(
         ap => normalized === ap || normalized.startsWith(ap + path.sep)
       );
-      if (!underAllowed) return false;
+      if (!underWorkspace && !underAllowed) return false;
     }
 
     const resolved = path.resolve(this.baseDir, expanded);

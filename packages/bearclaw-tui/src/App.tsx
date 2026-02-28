@@ -145,7 +145,7 @@ export function App() {
         break
       case "chat_list":
         log("[sessions]", "received", msg.chats.length, "chats")
-        if (autoLoadChatsRef.current && !currentChatIdRef.current) {
+        if (autoLoadChatsRef.current && !currentChatIdRef.current && !awaitingNewChatRef.current) {
           dispatch({ type: "SESSIONS_RECEIVED", chats: msg.chats })
           const chats = msg.chats
           const filtered = currentAgentId
@@ -167,6 +167,11 @@ export function App() {
         break
       }
       case "chat_history": {
+        // Don't overwrite the current chat if we're awaiting a response to a just-sent message
+        if (awaitingNewChatRef.current) {
+          log("[history]", "skipping session load: message in flight")
+          break
+        }
         log("[history]", "chatId:", msg.chatId, "raw message count:", msg.messages?.length ?? "undefined")
         if (msg.messages?.length > 0) {
           log("[history]", "first message sample:", JSON.stringify(msg.messages[0]).slice(0, 500))

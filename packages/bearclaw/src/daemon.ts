@@ -34,7 +34,7 @@ import { buildSystemPrompt } from './agent/context.js';
 import { loadSession, saveSession, clearSession, listChats } from './agent/session.js';
 import { normalizeMessages } from './agent/normalize-messages.js';
 import type { SessionProvider } from './gateway/ws-handler.js';
-import type { McpClient } from './mcp/index.js';
+import { type McpClient, createMcpTools } from './mcp/index.js';
 import { MessageBus } from './bus/bus.js';
 import { CliChannel } from './channels/cli.js';
 import type { Channel } from './channels/types.js';
@@ -208,10 +208,23 @@ async function main() {
   // 6b. Load skills from the default runtime (used for mentionables)
   const skills = defaultRuntime.skills;
 
-  // 6c. Collect all MCP clients from agent runtimes
+  // 6c. Collect all MCP clients and register their tools into the shared registry
   const mcpClients: McpClient[] = [];
   for (const runtime of agentRegistry.all()) {
     mcpClients.push(...runtime.mcpClients);
+    // Register MCP tools (runtime was created before toolRegistry existed)
+    const agentMcpServers = runtime.agentDir?.config.mcp?.servers ?? {};
+    let clientIdx = 0;
+    for (const [name] of Object.entries(agentMcpServers)) {
+      const client = runtime.mcpClients[clientIdx++];
+      if (client) {
+        const mcpTools = await createMcpTools(name, client);
+        for (const tool of mcpTools) {
+          toolRegistry.register(tool);
+        }
+        log.info('Registered MCP tools', { server: name, count: mcpTools.length, tools: mcpTools.map(t => t.name) });
+      }
+    }
   }
 
   // Schedule rules map — populated in section 12, referenced by before-hook closure

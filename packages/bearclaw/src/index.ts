@@ -33,7 +33,7 @@ import { runAgentLoop } from './agent/loop.js';
 import { buildSystemPrompt } from './agent/context.js';
 import { loadSession, saveSession, clearSession } from './agent/session.js';
 import { normalizeMessages } from './agent/normalize-messages.js';
-import type { McpClient } from './mcp/index.js';
+import { type McpClient, createMcpTools } from './mcp/index.js';
 import type { SkillDef } from './skills/types.js';
 import type { ToolContext } from './tools/types.js';
 import { parseSlashCommand } from './commands/slash.js';
@@ -274,8 +274,20 @@ async function main() {
   // Load skills
   const skills = agentRuntime.skills;
 
-  // MCP clients (agent-level only)
+  // MCP clients (agent-level only) — register tools into shared registry
   const mcpClients: McpClient[] = [...agentRuntime.mcpClients];
+  {
+    const agentMcpServers = agentRuntime.agentDir?.config.mcp?.servers ?? {};
+    let clientIdx = 0;
+    for (const [name] of Object.entries(agentMcpServers)) {
+      const client = mcpClients[clientIdx++];
+      if (client) {
+        for (const tool of await createMcpTools(name, client)) {
+          toolRegistry.register(tool);
+        }
+      }
+    }
+  }
 
   // Initialize hooks
   const hooks = new ToolHookRegistryImpl();

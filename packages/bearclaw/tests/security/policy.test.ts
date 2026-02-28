@@ -44,6 +44,13 @@ describe('SecurityPolicy', () => {
       expect(policy.isPathAllowed('/etc/passwd')).toBe(false);
     });
 
+    it('allows absolute paths under workspace in workspaceOnly mode', () => {
+      const policy = makePolicy({ workspaceDir: '/workspace', workspaceOnly: true });
+      expect(policy.isPathAllowed('/workspace/file.txt')).toBe(true);
+      expect(policy.isPathAllowed('/workspace/sub/dir/file.txt')).toBe(true);
+      expect(policy.isPathAllowed('/workspacex/file.txt')).toBe(false);
+    });
+
     it('allows absolute paths when workspaceOnly is false', () => {
       const policy = makePolicy({ workspaceOnly: false, workspaceDir: '/workspace' });
       // /home/user is not in forbidden list (assuming not matching)
