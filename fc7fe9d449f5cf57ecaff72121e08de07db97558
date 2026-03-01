@@ -1,0 +1,60 @@
+packages/bearclaw-tui/src/App.tsx
+  f6816b81bf11c723 72,118-119,122-125,141-143,280-282,323-339,341-343,430-432
+  a1110cffe12f20b9 322
+packages/bearclaw/src/gateway/ws-handler.ts
+  f6816b81bf11c723 12,191-193,212-217,370-375
+packages/bearclaw/src/daemon.ts
+  f6816b81bf11c723 347-349,511-512,515
+packages/bearclaw-tui/scripts/session-dump.ts
+  f6816b81bf11c723 1-373
+packages/bearclaw-tui/src/ws-protocol.ts
+  f6816b81bf11c723 65-70,81,263-268,295
+packages/bearclaw/src/gateway/ws-protocol.ts
+  f6816b81bf11c723 65-70,81,263-268,295
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.6",
+  "base_commit_sha": "fc7fe9d449f5cf57ecaff72121e08de07db97558",
+  "prompts": {
+    "a1110cffe12f20b9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "31257c24-deef-4489-9e31-632cce9cf486",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Matt Ferrante <matt@heyferrante.com>",
+      "messages": [],
+      "total_additions": 12,
+      "total_deletions": 5,
+      "accepted_lines": 1,
+      "overriden_lines": 0
+    },
+    "a9659d9ed6556ad1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019c9802-ebe4-7a93-9670-0c12c92be84e",
+        "model": "gpt-5.2-codex"
+      },
+      "human_author": "Matt Ferrante <matt@heyferrante.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 15,
+      "overriden_lines": 0
+    },
+    "f6816b81bf11c723": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "349ab022-f436-4ee9-b40b-50c41cc30d58",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Matt Ferrante <matt@heyferrante.com>",
+      "messages": [],
+      "total_additions": 467,
+      "total_deletions": 59,
+      "accepted_lines": 460,
+      "overriden_lines": 0
+    }
+  }
+}
