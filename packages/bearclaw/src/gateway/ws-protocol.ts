@@ -62,6 +62,12 @@ export interface ClientMessage_GetStats {
   id: string;
 }
 
+export interface ClientMessage_CreateChat {
+  type: 'create_chat';
+  id: string;
+  agentId?: string;
+}
+
 export type ClientMessage =
   | ClientMessage_Message
   | ClientMessage_ApprovalResponse
@@ -71,7 +77,8 @@ export type ClientMessage =
   | ClientMessage_ListPendingApprovals
   | ClientMessage_ListUserRules
   | ClientMessage_RemoveUserRule
-  | ClientMessage_GetStats;
+  | ClientMessage_GetStats
+  | ClientMessage_CreateChat;
 
 // Server → Client messages
 export interface ServerMessage_Token {
@@ -253,6 +260,12 @@ export interface ServerMessage_Stats {
   pendingApprovals: number;
 }
 
+export interface ServerMessage_ChatCreated {
+  type: 'chat_created';
+  id: string;
+  chatId: string;
+}
+
 export interface ServerMessage_Error {
   type: 'error';
   id?: string;
@@ -279,6 +292,7 @@ export type ServerMessage =
   | ServerMessage_Usage
   | ServerMessage_Notice
   | ServerMessage_Stats
+  | ServerMessage_ChatCreated
   | ServerMessage_Error;
 
 export interface Mentionable {

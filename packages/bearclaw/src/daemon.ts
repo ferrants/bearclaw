@@ -344,7 +344,9 @@ async function main() {
     log.info('Sessions cleared', { channel: channelName, chatId });
   };
 
-  if (instanceConfig.channels.enabled.includes('cli')) {
+  // CLI channel is only started if explicitly enabled — the daemon is
+  // normally headless, serving clients via the WebSocket gateway.
+  if (process.env.BEARCLAW_CLI === '1' || process.argv.includes('--cli')) {
     channels.push(new CliChannel({
       onClearSession: (chatId) => clearAllAgentSessions('cli', chatId),
     }));
@@ -506,12 +508,11 @@ async function main() {
           const response = result.action === 'immediate' ? result.response : '';
 
           if (channel === 'websocket') {
-            // WebSocket: keep old session, create a new chatId
-            const newChatId = `ws_${Date.now()}`;
-            bus.publishOutbound({ channel, chatId, content: response });
+            // WebSocket: acknowledge the /new command; the client creates
+            // a new chatId via the create_chat protocol message.
             if (wsHandler) {
               const cmdResult: ServerMessage_CommandResult = {
-                type: 'command_result', chatId, command: 'new', message: response, newChatId,
+                type: 'command_result', chatId, command: 'new', message: 'Session cleared.',
               };
               wsHandler.broadcast(cmdResult);
             }

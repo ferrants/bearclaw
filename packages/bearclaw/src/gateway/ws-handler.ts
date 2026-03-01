@@ -9,6 +9,7 @@ import type { MentionablesProvider } from './mentionables.js';
 import type {
   ClientMessage,
   ClientMessage_ApprovalResponse,
+  ClientMessage_CreateChat,
   ClientMessage_ListChats,
   ClientMessage_GetChatHistory,
   ClientMessage_ListPendingApprovals,
@@ -187,6 +188,9 @@ export class WsHandler {
       case 'get_stats':
         this.handleGetStats(conn, msg);
         break;
+      case 'create_chat':
+        this.handleCreateChat(conn, msg);
+        break;
       default:
         this.sendTo(conn, {
           type: 'error',
@@ -205,10 +209,16 @@ export class WsHandler {
       return;
     }
 
+    if (!msg.chatId) {
+      log.warn('Message rejected: missing chatId', { id: msg.id });
+      this.sendTo(conn, { type: 'error', id: msg.id, code: 'MISSING_FIELD', message: 'chatId required' });
+      return;
+    }
+
     this.bus.publishInbound({
       channel: 'websocket',
       sender: 'websocket',
-      chatId: msg.chatId ?? 'ws_default',
+      chatId: msg.chatId,
       messageId: msg.id ?? `ws_${Date.now()}`,
       message: msg.message,
       timestamp: Date.now(),
@@ -355,6 +365,12 @@ export class WsHandler {
       return;
     }
     this.sendTo(conn, this.statsCollector.getStats(msg.id));
+  }
+
+  private handleCreateChat(conn: WebSocketConnection, msg: ClientMessage_CreateChat): void {
+    const chatId = `ws_${Date.now()}`;
+    log.info('Chat created', { chatId, agentId: msg.agentId });
+    this.sendTo(conn, { type: 'chat_created', id: msg.id, chatId });
   }
 
   private subscribeEvents(): void {

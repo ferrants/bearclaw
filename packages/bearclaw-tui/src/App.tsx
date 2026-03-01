@@ -31,8 +31,6 @@ export function App() {
   const scrollBoxRef = useRef<ScrollBoxRenderable>(null)
   const currentChatIdRef = useRef(currentChatId)
   currentChatIdRef.current = currentChatId
-  // Track whether we're waiting for the first response to a new chat
-  const awaitingNewChatRef = useRef(false)
   const autoLoadChatsRef = useRef(false)
   const sendRef = useRef<(msg: any) => void>(() => {})
 
@@ -65,34 +63,13 @@ export function App() {
     if (msg.type === "usage") dashDispatch({ type: "USAGE", model: msg.model, inputTokens: msg.inputTokens, outputTokens: msg.outputTokens, cacheReadTokens: msg.cacheReadTokens, cacheWriteTokens: msg.cacheWriteTokens })
     if (msg.type === "stats") dashDispatch({ type: "STATS", uptimeSeconds: msg.uptimeSeconds, agents: msg.agents, totalChatCount: msg.totalChatCount, totalMessages: msg.totalMessages, pendingApprovals: msg.pendingApprovals })
 
-    // Handle /new command: adopt newChatId BEFORE filtering so the filter
-    // uses the updated chatId for this client
-    if (msg.type === "command_result" && msg.command === "new" && msg.newChatId) {
-      if (currentChatIdRef.current === null) {
-        // This client sent /new — adopt the new chat
-        log("[ws:new]", "adopting newChatId:", msg.newChatId)
-        dispatch({ type: "ADOPT_CHAT_ID", chatId: msg.newChatId })
-        currentChatIdRef.current = msg.newChatId
-      }
-      // Don't show the "Session cleared" system message — the client
-      // already shows "New conversation started." via NEW_CHAT dispatch
-      return
-    }
-
     // Filter chat-specific messages to only show ones for the active chatId
     const isBroadcast = msg.type !== "chat_history" && msg.type !== "chat_list" && msg.type !== "mentionables" && msg.type !== "pending_approvals" && msg.type !== "user_rules" && msg.type !== "user_rule_removed" && msg.type !== "error"
     const msgChatId = (msg as any).chatId as string | undefined
     if (isBroadcast && msgChatId) {
       const activeChatId = currentChatIdRef.current
-      log("[ws:filter]", "type:", msg.type, "msgChatId:", msgChatId, "activeChatId:", activeChatId, "awaiting:", awaitingNewChatRef.current)
-      if (activeChatId === null && awaitingNewChatRef.current) {
-        // Adopt the chatId from the server's first response to our new chat
-        log("[ws:filter]", "adopting new chatId:", msgChatId)
-        dispatch({ type: "ADOPT_CHAT_ID", chatId: msgChatId })
-        currentChatIdRef.current = msgChatId
-        awaitingNewChatRef.current = false
-      } else if (activeChatId === null) {
-        // No active chat and not waiting for one — drop stray messages
+      log("[ws:filter]", "type:", msg.type, "msgChatId:", msgChatId, "activeChatId:", activeChatId)
+      if (activeChatId === null) {
         log("[ws:filter]", "dropping (no active chat)")
         return
       } else if (msgChatId !== activeChatId) {
@@ -138,14 +115,21 @@ export function App() {
         dispatch({ type: "SCHEDULE_TRIGGERED", schedule: msg.schedule, agentId: msg.agentId, message: msg.message })
         break
       case "command_result":
+        // Skip the /new command_result — the client handles new chats via create_chat
+        if (msg.command === "new") break
         dispatch({ type: "COMMAND_RESULT", command: msg.command, message: msg.message })
+        break
+      case "chat_created":
+        log("[ws:chat_created]", "chatId:", msg.chatId)
+        dispatch({ type: "ADOPT_CHAT_ID", chatId: msg.chatId })
+        currentChatIdRef.current = msg.chatId
         break
       case "notice":
         dispatch({ type: "NOTICE", level: msg.level, code: msg.code, message: msg.message })
         break
       case "chat_list":
         log("[sessions]", "received", msg.chats.length, "chats")
-        if (autoLoadChatsRef.current && !currentChatIdRef.current && !awaitingNewChatRef.current) {
+        if (autoLoadChatsRef.current && !currentChatIdRef.current) {
           dispatch({ type: "SESSIONS_RECEIVED", chats: msg.chats })
           const chats = msg.chats
           const filtered = currentAgentId
@@ -154,6 +138,9 @@ export function App() {
           const latest = filtered[0]
           if (latest) {
             sendRef.current({ type: "get_chat_history", id: String(Date.now()), chatId: latest.chatId, agentId: latest.agentId, channel: latest.channel })
+          } else {
+            // No existing chats — create a fresh one
+            sendRef.current({ type: "create_chat", id: String(Date.now()) })
           }
           autoLoadChatsRef.current = false
         } else {
@@ -167,11 +154,6 @@ export function App() {
         break
       }
       case "chat_history": {
-        // Don't overwrite the current chat if we're awaiting a response to a just-sent message
-        if (awaitingNewChatRef.current) {
-          log("[history]", "skipping session load: message in flight")
-          break
-        }
         log("[history]", "chatId:", msg.chatId, "raw message count:", msg.messages?.length ?? "undefined")
         if (msg.messages?.length > 0) {
           log("[history]", "first message sample:", JSON.stringify(msg.messages[0]).slice(0, 500))
@@ -294,10 +276,10 @@ export function App() {
       return
     }
     if (text === "/new") {
-      const payload: any = { type: "message", id: String(Date.now()), message: "/new" }
-      if (currentAgentId) payload.agentId = currentAgentId
-      send(payload)
       dispatch({ type: "NEW_CHAT" })
+      const createPayload: any = { type: "create_chat", id: String(Date.now()) }
+      if (currentAgentId) createPayload.agentId = currentAgentId
+      send(createPayload)
       dispatch({ type: "SET_INPUT", value: "" })
       inputValueRef.current = ""
       setSlashFilter("")
@@ -337,23 +319,38 @@ export function App() {
       return
     }
 
-    const msgPayload: any = { type: "message", id: String(Date.now()), message: text }
-    if (currentChatId) {
-      msgPayload.chatId = currentChatId
+    const chatIdToSend = currentChatIdRef.current
+    if (!chatIdToSend) {
+      // No chatId yet — auto-create one before sending
+      const createPayload: any = { type: "create_chat", id: String(Date.now()) }
+      if (currentAgentId) createPayload.agentId = currentAgentId
+      send(createPayload)
+      // Queue the message to be sent after chat_created arrives
+      const pendingText = text
+      const checkInterval = setInterval(() => {
+        if (currentChatIdRef.current) {
+          clearInterval(checkInterval)
+          const payload: any = { type: "message", id: String(Date.now()), message: pendingText, chatId: currentChatIdRef.current }
+          if (currentAgentId) payload.agentId = currentAgentId
+          send(payload)
+        }
+      }, 50)
+      // Safety: clear after 5s
+      setTimeout(() => clearInterval(checkInterval), 5000)
     } else {
-      awaitingNewChatRef.current = true
+      const msgPayload: any = { type: "message", id: String(Date.now()), message: text, chatId: chatIdToSend }
+      if (currentAgentId) {
+        msgPayload.agentId = currentAgentId
+      }
+      send(msgPayload)
     }
-    if (currentAgentId) {
-      msgPayload.agentId = currentAgentId
-    }
-    send(msgPayload)
     dispatch({ type: "SEND_MESSAGE" })
     inputValueRef.current = ""
     setSlashFilter("")
     if (chatInputRef.current) {
       chatInputRef.current.editBuffer.setText("")
     }
-  }, [currentAgentId, currentChatId, mode, renderer, send, slashMenuIndex, slashMenuVisible])
+  }, [currentAgentId, mode, renderer, send, slashMenuIndex, slashMenuVisible])
 
   useKeyboard((key) => {
     if (key.eventType === "release") return
@@ -429,10 +426,10 @@ export function App() {
         return
       }
       if (key.name === "n") {
-        const payload: any = { type: "message", id: String(Date.now()), message: "/new" }
-        if (currentAgentId) payload.agentId = currentAgentId
-        send(payload)
         dispatch({ type: "NEW_CHAT" })
+        const createPayload: any = { type: "create_chat", id: String(Date.now()) }
+        if (currentAgentId) createPayload.agentId = currentAgentId
+        send(createPayload)
         return
       }
       return
