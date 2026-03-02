@@ -1,6 +1,7 @@
 import type { LLMProvider, Message } from '../providers/types.js';
 import type { ToolContext, ToolResult, ToolRegistry, ToolHookRegistry } from '../tools/types.js';
 import type { EventBus } from '../events.js';
+import type { UserHookRunner } from '../hooks/user-hooks.js';
 import { errorResult } from '../tools/types.js';
 import { createLogger } from '../logging.js';
 
@@ -17,6 +18,7 @@ export interface AgentLoopConfig {
   eventBus?: EventBus;
   agentId?: string;
   chatId?: string;
+  userHooks?: UserHookRunner;
   options?: { maxTokens?: number; temperature?: number; onToken?: (token: string) => void };
 }
 
@@ -46,7 +48,7 @@ export async function runAgentLoop(
   messages: Message[],
   ctx: ToolContext,
 ): Promise<AgentLoopResult> {
-  const { provider, model, tools, hooks, maxIterations, maxTotalTokens, eventBus, options } = config;
+  const { provider, model, tools, hooks, maxIterations, maxTotalTokens, eventBus, userHooks, options } = config;
   const evAgentId = config.agentId ?? ctx.currentAgentConfig.name;
   const evChatId = config.chatId ?? ctx.chatId ?? '';
   let iteration = 0;
@@ -59,6 +61,11 @@ export async function runAgentLoop(
   const maxContextTokens = config.maxContextTokens ?? MODEL_CONTEXT_LIMITS[model] ?? 128000;
   let contextTokens = 0;
 
+  // Fire agent:start hook
+  if (userHooks) {
+    await userHooks.runAgentStart(evAgentId, model, evChatId || undefined);
+  }
+
   while (iteration < maxIterations) {
     iteration++;
 
@@ -66,7 +73,9 @@ export async function runAgentLoop(
     if (maxTotalTokens && totalTokens >= maxTotalTokens) {
       eventBus?.emit('agent:status', { agentId: evAgentId, chatId: evChatId, status: 'idle', contextTokens, maxContextTokens });
       const usage = { inputTokens, outputTokens, cacheReadTokens: cacheReadTokens > 0 ? cacheReadTokens : undefined, cacheWriteTokens: cacheWriteTokens > 0 ? cacheWriteTokens : undefined };
-      return { content: 'Token budget exceeded.', iterations: iteration, toolsUsed, totalTokens, usage };
+      const result = { content: 'Token budget exceeded.', iterations: iteration, toolsUsed, totalTokens, usage };
+      if (userHooks) await userHooks.runAgentEnd(evAgentId, result.content, result.iterations, result.toolsUsed.map(t => t.name), evChatId || undefined);
+      return result;
     }
 
     // Emit thinking status before LLM call (estimate context size from message content)
@@ -107,7 +116,9 @@ export async function runAgentLoop(
       log.info('Loop complete', { agentId, iteration, reason: response.finishReason, totalTokens, responseLength: response.content.length });
       eventBus?.emit('agent:status', { agentId: evAgentId, chatId: evChatId, status: 'idle', contextTokens, maxContextTokens });
       const usage = { inputTokens, outputTokens, cacheReadTokens: cacheReadTokens > 0 ? cacheReadTokens : undefined, cacheWriteTokens: cacheWriteTokens > 0 ? cacheWriteTokens : undefined };
-      return { content: response.content, iterations: iteration, toolsUsed, totalTokens, usage };
+      const result = { content: response.content, iterations: iteration, toolsUsed, totalTokens, usage };
+      if (userHooks) await userHooks.runAgentEnd(evAgentId, result.content, result.iterations, result.toolsUsed.map(t => t.name), evChatId || undefined);
+      return result;
     }
 
     // Log what the LLM wants to do
@@ -207,13 +218,15 @@ export async function runAgentLoop(
   log.warn('Max iterations reached', { agentId: ctx.currentAgentConfig.name, maxIterations, totalTokens });
   eventBus?.emit('agent:status', { agentId: evAgentId, chatId: evChatId, status: 'idle', contextTokens, maxContextTokens });
   const usage = { inputTokens, outputTokens, cacheReadTokens: cacheReadTokens > 0 ? cacheReadTokens : undefined, cacheWriteTokens: cacheWriteTokens > 0 ? cacheWriteTokens : undefined };
-  return {
+  const result = {
     content: 'Reached maximum iterations without a final response.',
     iterations: iteration,
     toolsUsed,
     totalTokens,
     usage,
   };
+  if (userHooks) await userHooks.runAgentEnd(evAgentId, result.content, result.iterations, result.toolsUsed.map(t => t.name), evChatId || undefined);
+  return result;
 }
 
 function summarizeArgs(toolName: string, args: Record<string, unknown>): Record<string, unknown> {

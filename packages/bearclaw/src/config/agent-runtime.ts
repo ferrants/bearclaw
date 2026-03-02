@@ -7,6 +7,7 @@ import type { SkillDef } from '../skills/types.js';
 import type { McpTransport } from '../mcp/index.js';
 import type { AgentConfig, TeamConfig, BearClawConfig } from './schema.js';
 import type { ResolvedAgentDir } from './agent-schema.js';
+import type { UserHookRunner } from '../hooks/user-hooks.js';
 
 /**
  * Per-agent runtime state. Each agent directory gets its own instance.
@@ -47,6 +48,12 @@ export interface AgentRuntime {
   /** Schedule rules for this agent. */
   schedules: import('./schema.js').ScheduleRule[];
 
+  /** User-configurable hook runner (from bearclaw.jsonc hooks). */
+  userHooks?: UserHookRunner;
+
   /** The resolved agent dir info (if loaded from a directory). */
   agentDir?: ResolvedAgentDir;
+
+  /** MCP servers that failed to start (name → error message). */
+  failedMcpServers: Record<string, string>;
 }

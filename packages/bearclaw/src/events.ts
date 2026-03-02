@@ -17,7 +17,7 @@ export interface EventMap {
   'agent:status': { agentId: string; chatId: string; status: 'idle' | 'thinking' | 'tool_use'; contextTokens: number; maxContextTokens: number };
   'usage': { agentId: string; chatId: string; inputTokens: number; outputTokens: number; cacheReadTokens?: number; cacheWriteTokens?: number; model: string };
   'agent:error': { agentId: string; chatId: string; message: string };
-  'notice': { level: 'info' | 'warn'; code: string; message: string; agentId?: string; chatId?: string; droppedToolMessages?: number; droppedToolCalls?: number };
+  'notice': { level: 'info' | 'warn'; code: string; message: string; agentId?: string; chatId?: string; droppedToolMessages?: number; droppedToolCalls?: number; serverName?: string; error?: string };
 }
 
 type EventHandler<T> = (data: T) => void;

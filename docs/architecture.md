@@ -86,6 +86,9 @@ bearclaw/
         spawn.ts                      # Provider-agnostic subagent
         message.ts                    # Cross-channel send
 
+    hooks/
+      user-hooks.ts                   # User-configurable subprocess hooks
+
     skills/
       types.ts                        # SkillDef
       frontmatter.ts                  # Zero-dependency YAML frontmatter parser
@@ -187,6 +190,9 @@ Tool Call Request
 PolicyEngine (before-hook) ──► deny → Error result
     │ allow/approve
     ▼
+User hooks: tool:before ──► exit 2 → Blocked
+    │ allow (may modify args)
+    ▼
 SecurityPolicy checks (paths, commands)
     │
     ▼
@@ -197,6 +203,9 @@ Tool-specific validation (SSRF, size limits, etc.)
     │
     ▼
 Execute
+    │
+    ▼
+User hooks: tool:after (sequential)
     │
     ▼
 After-hooks (parallel, async)

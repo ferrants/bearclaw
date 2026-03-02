@@ -44,6 +44,7 @@ import { runInitCommand } from './commands/init.js';
 import { discoverAgentDir, loadAgentDirConfig } from './config/agent-loader.js';
 import { createAgentRuntime } from './config/agent-runtime-factory.js';
 import type { AgentRuntime } from './config/agent-runtime.js';
+import type { UserHookRunner } from './hooks/user-hooks.js';
 
 const log = createLogger('cli');
 
@@ -356,6 +357,18 @@ async function main() {
     return { proceed: true, args };
   });
 
+  // User hooks as tool:before / tool:after hooks
+  if (agentRuntime.userHooks) {
+    const uh = agentRuntime.userHooks;
+    hooks.registerBefore(async (toolName, args, ctx) => {
+      const result = await uh.runToolBefore(toolName, args, ctx.currentAgentConfig.name, ctx.chatId);
+      return { proceed: result.proceed, args: result.args };
+    });
+    hooks.registerAfter(async (toolName, args, result, ctx) => {
+      await uh.runToolAfter(toolName, args, result.forLLM.slice(0, 500), ctx.currentAgentConfig.name, ctx.chatId);
+    });
+  }
+
   // Resolve agent config
   const agentId = agentRuntime.name;
   const agentConfig = agentRuntime.primaryAgentConfig;
@@ -387,7 +400,7 @@ async function main() {
   const workspacePath = agentRuntime.workspacePath;
 
   if (headless) {
-    await runHeadless(cliArgs.prompt!, cliArgs.sessionId, systemPrompt, sessionsDir, agentId, provider, model, toolRegistry, hooks, agentConfig, makeCtx, skills, mcpClients);
+    await runHeadless(cliArgs.prompt!, cliArgs.sessionId, systemPrompt, sessionsDir, agentId, provider, model, toolRegistry, hooks, agentConfig, makeCtx, skills, mcpClients, agentRuntime.userHooks);
   } else {
     await runRepl(systemPrompt, sessionsDir, agentId, provider, model, toolRegistry, hooks, agentConfig, makeCtx, skills, mcpClients, inlineAllowStore, workspacePath, agentRuntime);
   }
@@ -407,6 +420,7 @@ async function runHeadless(
   makeCtx: () => ToolContext,
   skills: SkillDef[],
   mcpClients: McpTransport[],
+  userHooks?: UserHookRunner,
 ): Promise<void> {
   const chatId = sessionId ?? `headless-${Date.now()}`;
   const normalizedHeadless = sessionId
@@ -428,7 +442,7 @@ async function runHeadless(
 
   try {
     const result = await runAgentLoop(
-      { provider, model, tools: toolRegistry, hooks, maxIterations: agentConfig.maxIterations ?? 25, maxTotalTokens: agentConfig.maxTotalTokens },
+      { provider, model, tools: toolRegistry, hooks, maxIterations: agentConfig.maxIterations ?? 25, maxTotalTokens: agentConfig.maxTotalTokens, userHooks },
       messages,
       makeCtx(),
     );
@@ -597,7 +611,7 @@ async function runRepl(
             if (slashCmd.args) {
               try {
                 const agentResult = await runAgentLoop(
-                  { provider, model, tools: toolRegistry, hooks, maxIterations: agentConfig.maxIterations ?? 25, maxTotalTokens: agentConfig.maxTotalTokens, options: { onToken: (t: string) => process.stdout.write(t) } },
+                  { provider, model, tools: toolRegistry, hooks, maxIterations: agentConfig.maxIterations ?? 25, maxTotalTokens: agentConfig.maxTotalTokens, userHooks: agentRuntimeInfo?.userHooks, options: { onToken: (t: string) => process.stdout.write(t) } },
                   messages,
                   makeCtx(),
                 );
@@ -625,7 +639,7 @@ async function runRepl(
             if (slashCmd.args) {
               try {
                 const agentResult = await runAgentLoop(
-                  { provider, model, tools: toolRegistry, hooks, maxIterations: agentConfig.maxIterations ?? 25, maxTotalTokens: agentConfig.maxTotalTokens, options: { onToken: (t: string) => process.stdout.write(t) } },
+                  { provider, model, tools: toolRegistry, hooks, maxIterations: agentConfig.maxIterations ?? 25, maxTotalTokens: agentConfig.maxTotalTokens, userHooks: agentRuntimeInfo?.userHooks, options: { onToken: (t: string) => process.stdout.write(t) } },
                   messages,
                   makeCtx(),
                 );
@@ -652,7 +666,7 @@ async function runRepl(
 
       try {
         const result = await runAgentLoop(
-          { provider, model, tools: toolRegistry, hooks, maxIterations: agentConfig.maxIterations ?? 25, maxTotalTokens: agentConfig.maxTotalTokens, options: { onToken: (t: string) => process.stdout.write(t) } },
+          { provider, model, tools: toolRegistry, hooks, maxIterations: agentConfig.maxIterations ?? 25, maxTotalTokens: agentConfig.maxTotalTokens, userHooks: agentRuntimeInfo?.userHooks, options: { onToken: (t: string) => process.stdout.write(t) } },
           messages,
           makeCtx(),
         );

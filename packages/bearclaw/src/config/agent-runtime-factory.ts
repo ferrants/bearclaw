@@ -11,6 +11,8 @@ import { loadSkillsMulti } from '../skills/index.js';
 import { McpClient, McpHttpClient, createMcpTools } from '../mcp/index.js';
 import type { McpTransport } from '../mcp/index.js';
 import type { ToolRegistryImpl } from '../tools/registry.js';
+import { createUserHookRunner } from '../hooks/user-hooks.js';
+import type { UserHookRunner } from '../hooks/user-hooks.js';
 import { createLogger } from '../logging.js';
 
 const log = createLogger('agent-runtime');
@@ -77,6 +79,7 @@ export async function createAgentRuntime(opts: CreateAgentRuntimeOptions): Promi
 
   // Start MCP servers (agent-specific + instance)
   const mcpClients: McpTransport[] = [];
+  const failedMcpServers: Record<string, string> = {};
   const agentMcpServers = agentDir.config.mcp?.servers ?? {};
   for (const [name, serverConfig] of Object.entries(agentMcpServers)) {
     let client: McpTransport;
@@ -90,13 +93,30 @@ export async function createAgentRuntime(opts: CreateAgentRuntimeOptions): Promi
       log.warn('MCP server config missing both url and command, skipping', { name });
       continue;
     }
-    await client.start();
+    try {
+      await client.start();
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      log.warn('MCP server failed to start, skipping', { name, error: errMsg });
+      failedMcpServers[name] = errMsg;
+      continue;
+    }
     mcpClients.push(client);
     if (toolRegistry) {
       for (const tool of await createMcpTools(name, client)) {
         toolRegistry.register(tool);
       }
     }
+  }
+
+  // Create user hook runner if hooks are configured
+  let userHooks: UserHookRunner | undefined;
+  if (agentDir.config.hooks && Object.keys(agentDir.config.hooks).length > 0) {
+    userHooks = createUserHookRunner(agentDir.config.hooks, agentDir.dir);
+    log.info('User hooks configured', {
+      events: Object.keys(agentDir.config.hooks),
+      hookCount: Object.values(agentDir.config.hooks).reduce((sum, arr) => sum + (arr?.length ?? 0), 0),
+    });
   }
 
   const primaryAgentConfig = resolvedConfig.agents[agentDir.name];
@@ -107,6 +127,7 @@ export async function createAgentRuntime(opts: CreateAgentRuntimeOptions): Promi
     workspace: agentDir.workspacePath,
     skills: skills.length,
     mcpServers: Object.keys(agentMcpServers).length,
+    failedMcpServers: Object.keys(failedMcpServers).length > 0 ? Object.keys(failedMcpServers) : undefined,
   });
 
   return {
@@ -124,6 +145,8 @@ export async function createAgentRuntime(opts: CreateAgentRuntimeOptions): Promi
     teams: resolvedConfig.teams,
     resolvedConfig,
     schedules: resolvedConfig.schedules,
+    userHooks,
     agentDir,
+    failedMcpServers,
   };
 }

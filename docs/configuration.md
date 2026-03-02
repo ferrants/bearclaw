@@ -489,6 +489,110 @@ Schedules allow agents to run on a timer without manual invocation. Each schedul
 
 The first example creates a tight sandbox: fresh thread every 6 hours, auto-allows 5 specific tools, denies anything else. The second reuses its conversation, allows read + exec, and auto-approves everything else.
 
+## Hooks (agent config)
+
+Hooks let you run shell commands or scripts at key lifecycle points in the agent loop. They execute as subprocesses via `sh -c`, receive JSON context on stdin, and use exit codes for control flow. Hooks are configured per-agent in `bearclaw.jsonc`.
+
+```jsonc
+{
+  "hooks": {
+    "tool:before": [
+      { "command": "./hooks/validate-exec.sh", "toolNames": ["exec"], "timeout": 5000 },
+      { "command": "node ./hooks/log-tool-call.js" }
+    ],
+    "tool:after": [
+      { "command": "node ./hooks/audit-log.js", "toolNames": ["write_file", "exec"] }
+    ],
+    "agent:start": [
+      { "command": "echo 'Agent starting' >> /tmp/bearclaw.log" }
+    ],
+    "agent:end": [
+      { "command": "curl -s -X POST https://example.com/webhook -d @-" }
+    ]
+  }
+}
+```
+
+### Hook Events
+
+| Event | Fires when | Can block? | Can modify args? |
+|---|---|---|---|
+| `agent:start` | Agent loop begins | No | No |
+| `tool:before` | Before each tool call (after policy) | Yes (exit 2) | Yes (stdout JSON) |
+| `tool:after` | After each tool call | No | No |
+| `agent:end` | Agent loop completes | No | No |
+
+### Hook Config Fields
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `command` | string | — | Shell command run via `sh -c`. Working directory is the agent directory |
+| `timeout` | number | `10000` | Max execution time in ms. Hook is killed if exceeded |
+| `toolNames` | string[] | — | Only run for these tool names (`tool:before` / `tool:after` only). Omit to match all tools |
+
+### Execution Model
+
+- **Stdin**: Each hook receives a JSON object on stdin with event-specific context
+- **Exit codes**: `0` = success (allow), `2` = block the tool call (`tool:before` only), any other = logged warning
+- **Stdout**: For `tool:before` hooks, valid JSON on stdout replaces the tool arguments. Non-JSON stdout is ignored
+- **Sequential**: Hooks within each event run in array order. For `tool:before`, modified args chain through each hook
+- **Timeout**: If a hook exceeds its timeout, the subprocess is killed and execution continues
+
+### Stdin JSON by Event
+
+**`agent:start`**:
+```json
+{ "event": "agent:start", "agentId": "my-agent", "model": "claude-sonnet-4-5-20250929", "chatId": "abc123" }
+```
+
+**`tool:before`**:
+```json
+{ "event": "tool:before", "toolName": "exec", "args": { "command": "ls -la" }, "agentId": "my-agent", "chatId": "abc123" }
+```
+
+**`tool:after`**:
+```json
+{ "event": "tool:after", "toolName": "exec", "args": { "command": "ls -la" }, "resultSummary": "...", "agentId": "my-agent", "chatId": "abc123" }
+```
+
+**`agent:end`**:
+```json
+{ "event": "agent:end", "agentId": "my-agent", "content": "Here is my response...", "iterations": 3, "toolsUsed": ["exec", "read_file"], "chatId": "abc123" }
+```
+
+### Examples
+
+**Block dangerous exec commands** (`hooks/validate-exec.sh`):
+```bash
+#!/bin/sh
+INPUT=$(cat)
+CMD=$(echo "$INPUT" | jq -r '.args.command // ""')
+case "$CMD" in
+  *rm\ -rf*|*mkfs*|*dd\ if=*) exit 2 ;;  # Block
+  *) exit 0 ;;                              # Allow
+esac
+```
+
+**Log all tool calls** (`hooks/log-tool-call.js`):
+```javascript
+let data = '';
+process.stdin.on('data', chunk => data += chunk);
+process.stdin.on('end', () => {
+  const event = JSON.parse(data);
+  const line = `${new Date().toISOString()} ${event.toolName} ${JSON.stringify(event.args)}\n`;
+  require('fs').appendFileSync('/tmp/bearclaw-tools.log', line);
+});
+```
+
+**Rewrite args** — a `tool:before` hook can output JSON to replace tool arguments:
+```bash
+#!/bin/sh
+# Force all exec commands to run with timeout
+INPUT=$(cat)
+CMD=$(echo "$INPUT" | jq -r '.args.command // ""')
+echo "{\"command\": \"timeout 30 $CMD\"}"
+```
+
 ## Monitoring (instance config)
 
 | Field | Type | Default | Description |

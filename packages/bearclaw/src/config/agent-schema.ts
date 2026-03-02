@@ -63,6 +63,16 @@ export interface AgentDirConfig {
    *  Each entry should point to a directory that contains skill subdirectories (each with a SKILL.md). */
   skillsDirs?: string[];
 
+  /** User-configurable hooks that run shell commands at lifecycle points. */
+  hooks?: Partial<Record<'agent:start' | 'tool:before' | 'tool:after' | 'agent:end', Array<{
+    /** Shell command to run via `sh -c`. Receives JSON on stdin. */
+    command: string;
+    /** Timeout in ms (default 10000). */
+    timeout?: number;
+    /** Only run for these tool names (tool:before / tool:after only). */
+    toolNames?: string[];
+  }>>>;
+
   /** Schedule rules tagged to this agent. */
   schedules?: ScheduleRule[];
 }

@@ -57,6 +57,7 @@ import { loadAgentDirConfig } from './config/agent-loader.js';
 import { createAgentRuntime } from './config/agent-runtime-factory.js';
 import type { AgentRuntime } from './config/agent-runtime.js';
 import { POLICY_DEFAULTS } from './config/defaults.js';
+import type { UserHookRunner } from './hooks/user-hooks.js';
 
 const log = createLogger('daemon');
 
@@ -145,6 +146,20 @@ async function main() {
   // 4. Event bus
   const eventBus = new EventBus();
 
+  // Emit notices for any MCP servers that failed to start
+  for (const runtime of agentRegistry.all()) {
+    for (const [serverName, error] of Object.entries(runtime.failedMcpServers)) {
+      eventBus.emit('notice', {
+        level: 'warn',
+        code: 'MCP_SERVER_FAILED',
+        message: `MCP server "${serverName}" failed to start: ${error}`,
+        agentId: runtime.name,
+        serverName,
+        error,
+      });
+    }
+  }
+
   // 5. Providers
   function createProvider(name: string): LLMProvider {
     switch (name) {
@@ -216,6 +231,8 @@ async function main() {
     const agentMcpServers = runtime.agentDir?.config.mcp?.servers ?? {};
     let clientIdx = 0;
     for (const [name] of Object.entries(agentMcpServers)) {
+      // Skip servers that failed to start
+      if (name in runtime.failedMcpServers) continue;
       const client = runtime.mcpClients[clientIdx++];
       if (client) {
         const mcpTools = await createMcpTools(name, client);
@@ -324,6 +341,23 @@ async function main() {
     }
 
     return { proceed: true, args };
+  });
+
+  // User hooks as tool:before / tool:after (per-agent)
+  hooks.registerBefore(async (toolName, args, ctx) => {
+    const agentName = ctx.currentAgentConfig.name;
+    const runtime = agentRegistry.get(agentName);
+    const uh = runtime?.userHooks;
+    if (!uh) return { proceed: true, args };
+    const result = await uh.runToolBefore(toolName, args, agentName, ctx.chatId);
+    return { proceed: result.proceed, args: result.args };
+  });
+  hooks.registerAfter(async (toolName, args, result, ctx) => {
+    const agentName = ctx.currentAgentConfig.name;
+    const runtime = agentRegistry.get(agentName);
+    const uh = runtime?.userHooks;
+    if (!uh) return;
+    await uh.runToolAfter(toolName, args, result.forLLM.slice(0, 500), agentName, ctx.chatId);
   });
 
   // 8. Message bus
@@ -774,6 +808,7 @@ async function main() {
           eventBus,
           agentId,
           chatId,
+          userHooks: runtime.userHooks,
         },
         messages,
         ctx,
