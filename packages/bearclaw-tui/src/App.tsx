@@ -64,7 +64,7 @@ export function App() {
     if (msg.type === "stats") dashDispatch({ type: "STATS", uptimeSeconds: msg.uptimeSeconds, agents: msg.agents, totalChatCount: msg.totalChatCount, totalMessages: msg.totalMessages, pendingApprovals: msg.pendingApprovals })
 
     // Filter chat-specific messages to only show ones for the active chatId
-    const isBroadcast = msg.type !== "chat_history" && msg.type !== "chat_list" && msg.type !== "mentionables" && msg.type !== "pending_approvals" && msg.type !== "user_rules" && msg.type !== "user_rule_removed" && msg.type !== "error"
+    const isBroadcast = msg.type !== "chat_history" && msg.type !== "chat_list" && msg.type !== "mentionables" && msg.type !== "pending_approvals" && msg.type !== "user_rules" && msg.type !== "user_rule_removed" && msg.type !== "error" && msg.type !== "chat_created"
     const msgChatId = (msg as any).chatId as string | undefined
     if (isBroadcast && msgChatId) {
       const activeChatId = currentChatIdRef.current
@@ -513,8 +513,19 @@ export function App() {
       // Enter to accept and submit would be handled below in the deferred handler
     }
 
+    // Ctrl+C to quit
+    if (key.name === "c" && key.ctrl) {
+      renderer.destroy()
+      process.exit(0)
+      return
+    }
+
     if (key.name === "enter" || key.name === "return") {
       if (mode === "chat") {
+        // Call handleSubmit directly — the textarea's onSubmit prop doesn't
+        // survive reconciler updates (setProperty "onSubmit" case only handles
+        // InputRenderable, not TextareaRenderable), so the callback goes stale.
+        handleSubmit()
         return
       }
     }

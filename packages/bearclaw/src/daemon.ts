@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import * as path from 'node:path';
+import * as fs from 'node:fs/promises';
 import { getConfigDir, encryptConfigSecrets, loadInstanceConfig } from './config/config.js';
 import { setLogLevel, createLogger } from './logging.js';
 import { EventBus } from './events.js';
@@ -14,6 +15,7 @@ import { OllamaProvider } from './providers/ollama.js';
 import { CliDelegationProvider } from './providers/cli-delegation.js';
 import type { LLMProvider, Message } from './providers/types.js';
 import { ToolRegistryImpl } from './tools/registry.js';
+import { filterToolNames } from './tools/filter.js';
 import { ToolHookRegistryImpl } from './tools/hooks.js';
 import { readFileTool } from './tools/builtin/read-file.js';
 import { writeFileTool } from './tools/builtin/write-file.js';
@@ -242,6 +244,17 @@ async function main() {
         log.info('Registered MCP tools', { server: name, count: mcpTools.length, tools: mcpTools.map(t => t.name) });
       }
     }
+  }
+
+  // 6d. Apply top-level tool filtering from agent config
+  const mainAgentConfig = defaultRuntime.agentDir?.config;
+  if (mainAgentConfig?.allowedTools || mainAgentConfig?.excludeTools) {
+    const allNames = toolRegistry.list();
+    const keep = new Set(filterToolNames(allNames, mainAgentConfig.allowedTools, mainAgentConfig.excludeTools));
+    for (const name of allNames) {
+      if (!keep.has(name)) toolRegistry.unregister(name);
+    }
+    log.info('Applied tool filter', { before: allNames.length, after: keep.size });
   }
 
   // Schedule rules map — populated in section 12, referenced by before-hook closure
@@ -666,11 +679,70 @@ async function main() {
         }
       }
 
+      // Build prefix messages for scheduled messages (contextFiles + skills)
+      let schedulePrefixMessages: Message[] | undefined;
+      if (channel === 'scheduler') {
+        const idxMatch = chatId.match(/^schedule_(\d+)/);
+        if (idxMatch) {
+          const schedRule = scheduleRulesByIndex.get(Number(idxMatch[1]));
+          if (schedRule) {
+            const agentName = schedRule.agent ?? agentRegistry.getDefault()?.name ?? '';
+            const runtime = agentRegistry.get(agentName);
+            const prefixes: Message[] = [];
+            let contextFailed = false;
+
+            if (schedRule.contextFiles && runtime) {
+              for (const filePath of schedRule.contextFiles) {
+                const resolved = path.resolve(runtime.dir, filePath);
+                if (!resolved.startsWith(runtime.dir + path.sep) && resolved !== runtime.dir) {
+                  log.warn('Schedule contextFiles path escapes agent directory', { filePath, agentDir: runtime.dir });
+                  contextFailed = true;
+                  if (!schedRule.requireContext) continue;
+                  break;
+                }
+                try {
+                  const content = await fs.readFile(resolved, 'utf-8');
+                  prefixes.push({ role: 'user', content: `[File: ${filePath}]\n\n${content}` });
+                } catch (err) {
+                  log.warn('Failed to read schedule context file', { filePath, error: (err as Error).message });
+                  contextFailed = true;
+                  if (!schedRule.requireContext) continue;
+                  break;
+                }
+              }
+            }
+
+            if (!contextFailed || !schedRule.requireContext) {
+              if (schedRule.skills && runtime) {
+                const runtimeSkills = runtime.skills;
+                for (const skillName of schedRule.skills) {
+                  const skill = runtimeSkills.find(s => s.name === skillName);
+                  if (skill) {
+                    prefixes.push({ role: 'user', content: `[Skill: ${skill.name}]\n\n${skill.instructions}` });
+                  } else {
+                    log.warn('Schedule references unknown skill', { skillName, agent: agentName });
+                    contextFailed = true;
+                    if (schedRule.requireContext) break;
+                  }
+                }
+              }
+            }
+
+            if (contextFailed && schedRule.requireContext) {
+              log.error('Schedule aborted: required context missing', { chatId, agent: agentName });
+              continue;
+            }
+
+            if (prefixes.length > 0) schedulePrefixMessages = prefixes;
+          }
+        }
+      }
+
       // If a specific agent was requested (e.g. from WebSocket), route directly
       if (requestedAgent) {
         const resolved = resolveRuntime(requestedAgent);
         if (resolved && agentRegistry.isPrimary(requestedAgent)) {
-          processAgentMessage(requestedAgent, cleaned, channel, chatId, sender);
+          processAgentMessage(requestedAgent, cleaned, channel, chatId, sender, undefined, schedulePrefixMessages);
           continue;
         }
         // Sub-agents are not externally addressable — fall through to default routing
@@ -704,6 +776,7 @@ async function main() {
           chatId,
           sender,
           convId,
+          schedulePrefixMessages,
         );
       } else {
         // Direct agent routing
@@ -713,6 +786,8 @@ async function main() {
           channel,
           chatId,
           sender,
+          undefined,
+          schedulePrefixMessages,
         );
       }
     }
@@ -753,6 +828,8 @@ async function main() {
       agentConfigs: runtime.agentConfigs,
       currentAgentConfig: agentConfig,
       providerFactory: createProvider,
+      skills: runtime.skills,
+      agentDir: runtime.dir,
     };
 
     // Load session and build context (always refresh system prompt)

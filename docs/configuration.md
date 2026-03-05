@@ -486,8 +486,13 @@ Schedules allow agents to run on a timer without manual invocation. Each schedul
 | `newThread` | boolean | `false` | When true, each run gets a fresh session (unique chatId) instead of accumulating history |
 | `allow` | string[] | `[]` | Tool names to auto-approve for this schedule via the inline allow store (`session` scope) |
 | `approvalMode` | string | — | Fallback for tools not in the `allow` list: `"auto-approve"` or `"auto-deny"`. If unset, falls through to the global gateway approval mode |
+| `contextFiles` | string[] | `[]` | File paths (relative to agent directory) injected as context before the message |
+| `skills` | string[] | `[]` | Skill names whose instructions are injected as context before the message |
+| `requireContext` | boolean | `false` | If true, abort the scheduled run when any context file or skill is missing |
 
 The first example creates a tight sandbox: fresh thread every 6 hours, auto-allows 5 specific tools, denies anything else. The second reuses its conversation, allows read + exec, and auto-approves everything else.
+
+Context files and skills are injected as user messages before the schedule's message, giving the agent relevant context without relying on it to read files itself. With `requireContext: true`, the schedule silently skips execution if any file is unreadable or skill is unknown — useful for schedules that are meaningless without their context.
 
 ## Hooks (agent config)
 

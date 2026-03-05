@@ -4,6 +4,7 @@ import type { ApprovalManager } from '../security/approvals.js';
 import type { InlineAllowStore } from '../security/inline-allow.js';
 import type { AgentConfig } from '../config/schema.js';
 import type { LLMProvider } from '../providers/types.js';
+import type { SkillDef } from '../skills/types.js';
 
 export interface ToolResult {
   forLLM: string;
@@ -72,6 +73,8 @@ export interface ToolContext {
   agentConfigs: Record<string, AgentConfig>;
   currentAgentConfig: AgentConfig;
   providerFactory: (providerName: string) => LLMProvider;
+  skills?: SkillDef[];
+  agentDir?: string;
 }
 
 export interface Tool {

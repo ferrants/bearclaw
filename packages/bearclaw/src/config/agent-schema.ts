@@ -19,6 +19,10 @@ export interface AgentDirConfig {
   maxTotalTokens?: number;
   /** System prompt files, resolved relative to agent dir. */
   systemPromptFiles?: string[];
+  /** Glob patterns of tool names this agent may use. If set, only matching tools are available. */
+  allowedTools?: string[];
+  /** Glob patterns of tool names to exclude from this agent. Applied after allowedTools. */
+  excludeTools?: string[];
 
   /** Internal sub-agent definitions (callable via spawn only). */
   subagents?: Record<string, AgentConfig>;

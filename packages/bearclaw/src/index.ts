@@ -15,6 +15,7 @@ import { CliDelegationProvider } from './providers/cli-delegation.js';
 import type { LLMProvider } from './providers/types.js';
 import type { Message } from './providers/types.js';
 import { ToolRegistryImpl } from './tools/registry.js';
+import { filterToolNames } from './tools/filter.js';
 import { ToolHookRegistryImpl } from './tools/hooks.js';
 import { readFileTool } from './tools/builtin/read-file.js';
 import { writeFileTool } from './tools/builtin/write-file.js';
@@ -290,6 +291,16 @@ async function main() {
     }
   }
 
+  // Apply top-level tool filtering from agent config
+  const agentDirConfig = agentRuntime.agentDir?.config;
+  if (agentDirConfig?.allowedTools || agentDirConfig?.excludeTools) {
+    const allNames = toolRegistry.list();
+    const keep = new Set(filterToolNames(allNames, agentDirConfig.allowedTools, agentDirConfig.excludeTools));
+    for (const name of allNames) {
+      if (!keep.has(name)) toolRegistry.unregister(name);
+    }
+  }
+
   // Initialize hooks
   const hooks = new ToolHookRegistryImpl();
 
@@ -387,6 +398,8 @@ async function main() {
     agentConfigs: agentRuntime.agentConfigs,
     currentAgentConfig: agentConfig,
     providerFactory: createProvider,
+    skills: agentRuntime.skills,
+    agentDir: agentRuntime.dir,
   };
 
   function makeCtx(): ToolContext {

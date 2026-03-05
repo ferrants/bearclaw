@@ -13,6 +13,11 @@ export class ToolRegistryImpl {
     this.tools.set(tool.name, tool);
   }
 
+  unregister(name: string): void {
+    this.tools.delete(name);
+    this.hiddenTools.delete(name);
+  }
+
   registerHidden(tool: Tool): void {
     this.tools.set(tool.name, tool);
     this.hiddenTools.add(tool.name);

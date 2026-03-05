@@ -84,6 +84,12 @@ export interface ScheduleRule {
   newThread?: boolean;
   allow?: string[];
   approvalMode?: 'auto-approve' | 'auto-deny' | 'user-rules';
+  /** File paths (relative to agent directory) to inject as context before the scheduled message. */
+  contextFiles?: string[];
+  /** Skill names to activate; their instructions are injected as context before the scheduled message. */
+  skills?: string[];
+  /** If true, abort the scheduled run when any contextFile or skill is missing. Default: false (warn and continue). */
+  requireContext?: boolean;
 }
 
 export interface McpServerConfig {
@@ -104,6 +110,10 @@ export interface AgentConfig {
   maxIterations?: number;
   maxTotalTokens?: number;
   systemPromptFiles?: string[];
+  /** Glob patterns of tool names this agent may use. If set, only matching tools are available. */
+  allowedTools?: string[];
+  /** Glob patterns of tool names to exclude from this agent. Applied after allowedTools. */
+  excludeTools?: string[];
 }
 
 export interface TeamConfig {

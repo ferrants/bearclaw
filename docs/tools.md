@@ -126,8 +126,23 @@ Spawn a subagent to handle a task.
 | `provider` | string | no | Override provider |
 | `successCriteria` | string | no | What "done" looks like |
 | `maxIterations` | number | no | Max iterations (default: 10) |
+| `contextFiles` | string[] | no | File paths (relative to agent directory) to inject as context |
+| `skills` | string[] | no | Skill names to activate in the subagent |
 
 The subagent runs its own agent loop in the same Node process. It gets a restricted tool registry (no `spawn` or `message` tools to prevent recursive spawning). The subagent's final response is returned as the tool result.
+
+**Context injection**: `contextFiles` and `skills` let you pre-load the subagent with relevant context before it starts working on the task. Context files are read from the agent directory (e.g. `prompts/style-guide.md`, `memory/notes.md`) and injected as user messages. Skills are looked up by name and their instructions are injected as user messages. If a skill declares `allowed-tools`, those tools are added to the subagent's tool registry.
+
+The message structure sent to the subagent is:
+
+```
+system: task + successCriteria
+user: "[File: prompts/guide.md]\n\n<contents>"     (one per contextFile)
+user: "[Skill: web-scraping]\n\n<instructions>"     (one per skill)
+user: task                                           (always last)
+```
+
+**Security**: Context file paths are resolved relative to the agent directory and validated to prevent directory traversal — paths that escape the agent directory (via `../`) are rejected.
 
 ### message
 

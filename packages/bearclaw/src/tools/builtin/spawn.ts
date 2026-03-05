@@ -1,6 +1,9 @@
+import * as path from 'node:path';
+import * as fs from 'node:fs/promises';
 import type { Tool, ToolContext, ToolResult } from '../types.js';
 import { toolResult, errorResult } from '../types.js';
 import { ToolRegistryImpl } from '../registry.js';
+import { filterToolNames } from '../filter.js';
 import type { Message } from '../../providers/types.js';
 
 // Forward reference - will be imported by the actual agent loop
@@ -33,6 +36,16 @@ export const spawnTool: Tool = {
       provider: { type: 'string', description: 'Override provider (e.g., "cli-delegation" for MCP access)' },
       successCriteria: { type: 'string', description: 'What "done" looks like' },
       maxIterations: { type: 'number', description: 'Max iterations (default 10)' },
+      contextFiles: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'File paths (relative to agent directory) to read and inject as context for the subagent',
+      },
+      skills: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Skill names to activate; their instructions get injected as context messages',
+      },
     },
     required: ['task'],
   },
@@ -50,6 +63,8 @@ export const spawnTool: Tool = {
       (args.maxIterations as number) ?? 10,
       ctx.currentAgentConfig.maxIterations ?? 25,
     );
+    const contextFiles = args.contextFiles as string[] | undefined;
+    const skillNames = args.skills as string[] | undefined;
 
     // Resolve agent config
     const agentConfig = ctx.agentConfigs[agentId];
@@ -59,12 +74,31 @@ export const spawnTool: Tool = {
     const providerName = providerOverride ?? agentConfig.provider;
     const provider = ctx.providerFactory(providerName);
 
-    // Build restricted tool registry (no spawn, no message)
+    // Build restricted tool registry (no spawn, no message, filtered by agent config)
     const childRegistry = new ToolRegistryImpl();
-    for (const name of ctx.toolRegistry.list()) {
-      if (name === 'spawn' || name === 'message') continue;
+    const allNames = ctx.toolRegistry.list().filter(n => n !== 'spawn' && n !== 'message');
+    const filtered = filterToolNames(allNames, agentConfig.allowedTools, agentConfig.excludeTools);
+    for (const name of filtered) {
       const tool = ctx.toolRegistry.get(name);
       if (tool) childRegistry.register(tool);
+    }
+
+    // If skills request allowedTools, register those too
+    if (skillNames && ctx.skills) {
+      for (const skillName of skillNames) {
+        const skill = ctx.skills.find(s => s.name === skillName);
+        if (skill?.allowedTools) {
+          for (const toolPattern of skill.allowedTools) {
+            const matching = filterToolNames(ctx.toolRegistry.list(), [toolPattern]);
+            for (const name of matching) {
+              if (!childRegistry.get(name)) {
+                const tool = ctx.toolRegistry.get(name);
+                if (tool) childRegistry.register(tool);
+              }
+            }
+          }
+        }
+      }
     }
 
     // Build system prompt with task and success criteria
@@ -74,8 +108,42 @@ export const spawnTool: Tool = {
 
     const messages: Message[] = [
       { role: 'system', content: systemPrompt },
-      { role: 'user', content: task },
     ];
+
+    // Inject context files before the task message
+    if (contextFiles && ctx.agentDir) {
+      for (const filePath of contextFiles) {
+        const resolved = path.resolve(ctx.agentDir, filePath);
+        // Prevent path escape outside agentDir
+        if (!resolved.startsWith(ctx.agentDir + path.sep) && resolved !== ctx.agentDir) {
+          return errorResult(`contextFiles path escapes agent directory: ${filePath}`);
+        }
+        try {
+          const content = await fs.readFile(resolved, 'utf-8');
+          messages.push({ role: 'user', content: `[File: ${filePath}]\n\n${content}` });
+        } catch (err) {
+          return errorResult(`Failed to read context file ${filePath}: ${(err as Error).message}`);
+        }
+      }
+    } else if (contextFiles && !ctx.agentDir) {
+      return errorResult('contextFiles requires agentDir in tool context');
+    }
+
+    // Inject skill instructions before the task message
+    if (skillNames && ctx.skills) {
+      for (const skillName of skillNames) {
+        const skill = ctx.skills.find(s => s.name === skillName);
+        if (!skill) {
+          return errorResult(`Unknown skill: ${skillName}`);
+        }
+        messages.push({ role: 'user', content: `[Skill: ${skill.name}]\n\n${skill.instructions}` });
+      }
+    } else if (skillNames && !ctx.skills) {
+      return errorResult('skills requires skills in tool context');
+    }
+
+    // Task message always comes last
+    messages.push({ role: 'user', content: task });
 
     // Run subagent loop
     const childCtx = { ...ctx, toolRegistry: childRegistry };
